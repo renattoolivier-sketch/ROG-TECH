@@ -1,0 +1,6 @@
+{
+  "name": "OmniSight AI - Plataforma de Monitoramento & Visão Computacional IoT",
+  "description": "Arquitetura técnica, pipeline de visão computacional (YOLO, ALPR, Face, ROI) e motor de automação IoT MQTT para câmeras RTSP/ONVIF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
