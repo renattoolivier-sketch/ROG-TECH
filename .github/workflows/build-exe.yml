@@ -37,7 +37,7 @@ jobs:
 
       - name: 5. Instalar Electron & Ferramentas
         run: |
-          npm install --save-dev electron electron-builder
+          npm install --save-dev electron electron-builder --force
 
       - name: 6. Gerar Executáveis Windows (.EXE Portátil + Instalador)
         run: |
