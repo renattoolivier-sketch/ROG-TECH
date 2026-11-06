@@ -41,7 +41,7 @@ jobs:
 
       - name: 6. Gerar Executáveis Windows (.EXE Portátil + Instalador)
         run: |
-          npx electron-builder --win --x64
+          npx electron-builder --win --x64 --publish never
 
       - name: 7. Salvar Artefatos para Download Direto
         uses: actions/upload-artifact@v4
