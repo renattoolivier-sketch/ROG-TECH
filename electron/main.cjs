@@ -22,12 +22,10 @@ function createWindow() {
   });
 
   // Load the web app
-  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
-  
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:3000');
   } else {
-    mainWindow.loadURL(startUrl);
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
