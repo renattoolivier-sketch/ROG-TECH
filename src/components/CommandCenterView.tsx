@@ -5,7 +5,7 @@ import {
   Maximize2, Volume2, VolumeX, Eye, AlertTriangle, 
   Lock, Unlock, Lightbulb, Thermometer, Check, Power,
   Clock, Sparkles, Sliders, RefreshCw, Layers, Crosshair, ChevronRight, CheckCircle2,
-  Activity, Link as LinkIcon, Copy, Share2
+  Activity, Link as LinkIcon, Copy, Share2, Plus
 } from 'lucide-react';
 
 interface CommandCenterViewProps {
@@ -210,6 +210,16 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
 
         {/* Status Telemetry & Digital Clock */}
         <div className="flex items-center space-x-2.5 text-xs font-mono flex-wrap gap-y-2">
+          {/* PRIMARY CALL-TO-ACTION: ADICIONAR DISPOSITIVOS */}
+          <button
+            onClick={onOpenAddCameraModal}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs font-mono flex items-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer ring-1 ring-emerald-400/50"
+            title="Adicionar novas câmeras IP Intelbras, NVRs ou relés IoT"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>+ ADICIONAR DISPOSITIVOS</span>
+          </button>
+
           {/* Direct Link Access Button */}
           <button
             onClick={handleCopyLink}
@@ -221,7 +231,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
             title="Copiar link de acesso para abrir no celular ou rede local"
           >
             {copiedLink ? <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" /> : <LinkIcon className="w-3.5 h-3.5 text-cyan-400" />}
-            <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link de Acesso'}</span>
+            <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link'}</span>
           </button>
 
           <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300">

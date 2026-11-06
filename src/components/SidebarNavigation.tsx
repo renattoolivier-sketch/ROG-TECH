@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, Video, Map, Sliders, Zap, 
-  FileText, Plus, Radio, Server, Shield, Sparkles, BookOpen, UserCheck, Clock
+  FileText, Plus, Radio, Server, Shield, Sparkles, BookOpen, UserCheck, Clock,
+  Building, Download
 } from 'lucide-react';
 
 interface SidebarNavigationProps {
@@ -64,6 +65,19 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       label: 'Faces & Placas',
       sub: 'Cadastro ALPR & Rostos',
       icon: UserCheck
+    },
+    {
+      id: 'clients',
+      label: 'Clientes & Usuários',
+      sub: 'Multi-Tenant & RLS',
+      icon: Building,
+      badge: 'NOVO'
+    },
+    {
+      id: 'local_deploy',
+      label: 'Baixar App & GitHub',
+      sub: 'PC Local & Celular',
+      icon: Download
     },
     {
       id: 'architecture',
@@ -148,10 +162,10 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
         <div className="pt-3">
           <button
             onClick={onOpenAddCameraModal}
-            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 transition-all active:scale-95 cursor-pointer ring-1 ring-emerald-400/50"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
-            <span>+ Adicionar Câmera / NVR</span>
+            <span>+ ADICIONAR DISPOSITIVOS</span>
           </button>
         </div>
       </div>

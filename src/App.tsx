@@ -9,6 +9,8 @@ import { ArchitectureDocs } from './components/ArchitectureDocs';
 import { AddCameraOrNvrModal } from './components/AddCameraOrNvrModal';
 import { InteractiveMapView } from './components/InteractiveMapView';
 import { SystemLogsView } from './components/SystemLogsView';
+import { ClientMultiTenantManager } from './components/ClientMultiTenantManager';
+import { LocalNetworkDeployGuide } from './components/LocalNetworkDeployGuide';
 import { 
   INITIAL_CAMERAS, 
   INITIAL_AUTOMATION_RULES, 
@@ -27,7 +29,8 @@ import {
 } from './types';
 import { 
   Bell, X, ShieldAlert, CheckCircle2, Zap, 
-  LayoutDashboard, Video, Map, Radio, Sliders, BookOpen, UserCheck, Clock 
+  LayoutDashboard, Video, Map, Radio, Sliders, BookOpen, UserCheck, Clock,
+  Building, Download, User, ShieldCheck, Lock
 } from 'lucide-react';
 
 export default function App() {
@@ -42,6 +45,21 @@ export default function App() {
   const [alerts, setAlerts] = useState<SystemEventAlert[]>([]);
   const [latestPopup, setLatestPopup] = useState<SystemEventAlert | null>(null);
   const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
+
+  // Simulated Multi-Tenant Access Context (Super Admin vs Client Tenant)
+  const [simulatedUser, setSimulatedUser] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    role: 'super_admin' | 'tenant_admin' | 'viewer';
+    tenantId: string | null;
+  }>({
+    id: 'admin_master',
+    name: 'Renato Olivier (Master ROG-TECH)',
+    email: 'renattoolivier@gmail.com',
+    role: 'super_admin',
+    tenantId: null
+  });
 
   // Handle Event Triggered from Computer Vision Simulation
   const handleTriggerEvent = (alertData: Omit<SystemEventAlert, 'id' | 'timestamp' | 'ack'>) => {
@@ -178,7 +196,18 @@ export default function App() {
     setPlates(prev => prev.filter(p => p.id !== id));
   };
 
-  const currentCam = cameras.find(c => c.id === selectedCameraId) || cameras[0];
+  const visibleCameras = cameras.filter(cam => {
+    if (simulatedUser.role === 'super_admin') return true;
+    if (simulatedUser.tenantId === 'tenant_condominio') {
+      return ['cam_portao', 'cam_garagem'].includes(cam.id);
+    }
+    if (simulatedUser.tenantId === 'tenant_galpao') {
+      return ['cam_fachada'].includes(cam.id);
+    }
+    return true;
+  });
+
+  const currentCam = visibleCameras.find(c => c.id === selectedCameraId) || visibleCameras[0] || cameras[0];
   const activeAlarms = alerts.filter(a => !a.ack && a.severity === 'critical').length;
 
   return (
@@ -196,9 +225,66 @@ export default function App() {
 
       {/* MAIN VIEWPORT WRAPPER */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* MULTI-TENANT SIMULATION STATUS BANNER */}
+        <div className={`px-4 py-1.5 text-xs font-mono flex items-center justify-between border-b ${
+          simulatedUser.role === 'super_admin'
+            ? 'bg-slate-950/90 border-cyan-500/30 text-cyan-300'
+            : 'bg-amber-950/80 border-amber-500/40 text-amber-200'
+        }`}>
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-bold">
+              {simulatedUser.role === 'super_admin'
+                ? 'ACESSO MASTER: Renato Olivier (Super Admin Global) • Vendo todas as câmeras de todos os clientes'
+                : `VISÃO ISOLADA DE CLIENTE: ${simulatedUser.name} • Apenas câmeras autorizadas deste cliente`}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {simulatedUser.role === 'super_admin' ? (
+              <button
+                onClick={() => {
+                  setSimulatedUser({
+                    id: 'usr_condo',
+                    name: 'Condomínio Residencial Parque Solar',
+                    email: 'sindico@parquesolar.com.br',
+                    role: 'tenant_admin',
+                    tenantId: 'tenant_condominio'
+                  });
+                }}
+                className="px-2.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold transition-all cursor-pointer"
+              >
+                Simular Visão do Cliente 1
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setSimulatedUser({
+                    id: 'admin_master',
+                    name: 'Renato Olivier (Master ROG-TECH)',
+                    email: 'renattoolivier@gmail.com',
+                    role: 'super_admin',
+                    tenantId: null
+                  });
+                }}
+                className="px-2.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition-all cursor-pointer"
+              >
+                Voltar para Master Admin
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveTab('clients')}
+              className="text-slate-400 hover:text-white underline text-[11px]"
+            >
+              Gerenciar RLS
+            </button>
+          </div>
+        </div>
+
         {/* Floating High-Priority Event Toast Banner */}
         {latestPopup && (
-          <div className="fixed top-5 right-5 z-50 max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="fixed top-12 right-5 z-50 max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-300">
             <div className={`p-4 rounded-xl border shadow-2xl backdrop-blur-md flex items-start space-x-3 ${
               latestPopup.severity === 'critical'
                 ? 'bg-rose-950/90 border-rose-500 text-rose-100 shadow-rose-950/50'
@@ -242,7 +328,7 @@ export default function App() {
             onClick={() => setIsAddCameraModalOpen(true)}
             className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1"
           >
-            + Câmera
+            + ADICIONAR DISPOSITIVOS
           </button>
         </div>
 
@@ -250,7 +336,7 @@ export default function App() {
         <main className="flex-1 p-3 sm:p-5 lg:p-6 pb-20 md:pb-6">
           {activeTab === 'dashboard' && (
             <CommandCenterView
-              cameras={cameras}
+              cameras={visibleCameras}
               rules={rules}
               alerts={alerts}
               onTriggerAction={handleExecuteManualAction}
@@ -261,7 +347,7 @@ export default function App() {
 
           {activeTab === 'simulator' && (
             <LiveSimulator
-              cameras={cameras}
+              cameras={visibleCameras}
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
               onTriggerEvent={handleTriggerEvent}
@@ -272,7 +358,7 @@ export default function App() {
 
           {activeTab === 'maps' && (
             <InteractiveMapView
-              cameras={cameras}
+              cameras={visibleCameras}
               onTriggerAction={handleExecuteManualAction}
               onNavigateTab={setActiveTab}
             />
@@ -298,7 +384,7 @@ export default function App() {
 
           {activeTab === 'devices' && (
             <DeviceManager
-              cameras={cameras}
+              cameras={visibleCameras}
               onAddCamera={handleAddCamera}
               onAddBatchCameras={handleAddBatchCameras}
               onUpdateAiFps={handleUpdateAiFps}
@@ -315,6 +401,27 @@ export default function App() {
               onDeleteFace={handleDeleteFace}
               onDeletePlate={handleDeletePlate}
             />
+          )}
+
+          {activeTab === 'clients' && (
+            <ClientMultiTenantManager
+              cameras={cameras}
+              currentRole={simulatedUser.role}
+              activeTenantId={simulatedUser.tenantId}
+              onSwitchSimulatedUser={(userId, role, tenantId) => {
+                setSimulatedUser({
+                  id: userId,
+                  name: role === 'super_admin' ? 'Renato Olivier (Master ROG-TECH)' : `Cliente (${tenantId})`,
+                  email: role === 'super_admin' ? 'renattoolivier@gmail.com' : 'cliente@empresa.com.br',
+                  role,
+                  tenantId: tenantId || null
+                });
+              }}
+            />
+          )}
+
+          {activeTab === 'local_deploy' && (
+            <LocalNetworkDeployGuide />
           )}
 
           {activeTab === 'architecture' && (
@@ -413,6 +520,32 @@ export default function App() {
             <UserCheck className="w-4 h-4" />
             <span className="text-[10px] tracking-tight">Faces & Placas</span>
             {activeTab === 'biometrics' && <span className="w-5 h-0.5 bg-cyan-400 rounded-full"></span>}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('clients')}
+            className={`flex flex-col items-center space-y-0.5 py-1 px-3 rounded-lg transition-all ${
+              activeTab === 'clients'
+                ? 'text-cyan-400 font-bold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Building className="w-4 h-4" />
+            <span className="text-[10px] tracking-tight">Clientes & RLS</span>
+            {activeTab === 'clients' && <span className="w-5 h-0.5 bg-cyan-400 rounded-full"></span>}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('local_deploy')}
+            className={`flex flex-col items-center space-y-0.5 py-1 px-3 rounded-lg transition-all ${
+              activeTab === 'local_deploy'
+                ? 'text-emerald-400 font-bold'
+                : 'text-emerald-400/80 hover:text-emerald-300'
+            }`}
+          >
+            <Download className="w-4 h-4" />
+            <span className="text-[10px] tracking-tight font-bold">Baixar App</span>
+            {activeTab === 'local_deploy' && <span className="w-5 h-0.5 bg-emerald-400 rounded-full"></span>}
           </button>
 
           <button
