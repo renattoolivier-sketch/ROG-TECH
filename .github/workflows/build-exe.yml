@@ -48,7 +48,7 @@ jobs:
         if: always()
         with:
           name: ROG-TECH-Windows-EXE
-          path: dist-electron/*.exe
+          path: dist/*.exe
           retention-days: 30
 
       - name: 8. Anexar Arquivos .EXE na Release do GitHub
@@ -60,6 +60,6 @@ jobs:
             $tag = "v2.4.0"
           }
           Write-Host "Enviando executáveis para a release $tag..."
-          gh release upload $tag dist-electron/*.exe --clobber
+          gh release upload $tag dist/*.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
