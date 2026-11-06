@@ -190,7 +190,10 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
         {/* Link de Acesso Externo */}
         <button
           onClick={() => {
-            navigator.clipboard.writeText('https://ais-pre-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app');
+            const url = typeof window !== 'undefined' && window.location.origin.includes('run.app')
+              ? window.location.origin
+              : 'https://ais-dev-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
+            navigator.clipboard.writeText(url);
             setCopiedLink(true);
             setTimeout(() => setCopiedLink(false), 3000);
           }}

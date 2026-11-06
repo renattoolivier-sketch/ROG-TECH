@@ -386,7 +386,10 @@ services:
             <span className="text-xs font-mono text-slate-300">Link direto de acesso para instalar:</span>
             <button
               onClick={() => {
-                navigator.clipboard.writeText('https://ais-pre-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app');
+                const url = typeof window !== 'undefined' && window.location.origin.includes('run.app')
+                  ? window.location.origin
+                  : 'https://ais-dev-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
+                navigator.clipboard.writeText(url);
                 setCopiedSection('pwa_link');
                 setTimeout(() => setCopiedSection(null), 3000);
               }}
@@ -520,7 +523,10 @@ services:
           <div className="pt-3 border-t border-slate-800 space-y-2">
             <button
               onClick={() => {
-                navigator.clipboard.writeText('https://ais-pre-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app');
+                const url = typeof window !== 'undefined' && window.location.origin.includes('run.app')
+                  ? window.location.origin
+                  : 'https://ais-dev-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
+                navigator.clipboard.writeText(url);
                 setCopiedSection('pwa_link');
                 setTimeout(() => setCopiedSection(null), 3000);
               }}

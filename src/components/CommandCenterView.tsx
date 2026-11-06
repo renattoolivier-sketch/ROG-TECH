@@ -5,7 +5,7 @@ import {
   Maximize2, Volume2, VolumeX, Eye, AlertTriangle, 
   Lock, Unlock, Lightbulb, Thermometer, Check, Power,
   Clock, Sparkles, Sliders, RefreshCw, Layers, Crosshair, ChevronRight, CheckCircle2,
-  Activity, Link as LinkIcon, Copy, Share2, Plus
+  Activity, Link as LinkIcon, Copy, Share2, Plus, Download, Laptop, X
 } from 'lucide-react';
 
 interface CommandCenterViewProps {
@@ -38,6 +38,29 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isPingTesting, setIsPingTesting] = useState<boolean>(false);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setIsInstallModalOpen(true);
+    }
+  };
 
   const selectedCam = cameras.find(c => c.id === selectedCamId) || cameras[0];
 
@@ -133,7 +156,9 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   };
 
   const handleCopyLink = () => {
-    const appUrl = 'https://ais-pre-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
+    const appUrl = typeof window !== 'undefined' && window.location.origin.includes('run.app')
+      ? window.location.origin
+      : 'https://ais-dev-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
     navigator.clipboard.writeText(appUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 3000);
@@ -218,6 +243,16 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>+ ADICIONAR DISPOSITIVOS</span>
+          </button>
+
+          {/* INSTALL ON PC BUTTON */}
+          <button
+            onClick={handleInstallClick}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs font-mono flex items-center gap-1.5 shadow-md shadow-amber-400/20 active:scale-95 transition-all cursor-pointer"
+            title="Instalar ROG-TECH como aplicativo nativo no seu computador"
+          >
+            <Laptop className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Instalar no PC</span>
           </button>
 
           {/* Direct Link Access Button */}
@@ -783,6 +818,98 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Guided Windows Install Modal */}
+      {isInstallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-cyan-500/40 p-6 shadow-2xl space-y-5 text-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                  <Laptop className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white font-mono">
+                    Instalar ROG-TECH no seu Windows
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Aplicativo Desktop em Janela Própria (Sem Abas de Navegador)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsInstallModalOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-300 leading-relaxed">
+                Como o Chrome no Windows às vezes oculta o botão da barra de endereços, você pode instalar em <strong>3 cliques rápidos pelo menu</strong>:
+              </p>
+
+              <div className="space-y-2.5 font-mono">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
+                  <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold shrink-0">1</span>
+                  <div>
+                    <span className="font-bold text-white">Abra o menu do Chrome:</span>
+                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                      No canto superior direito do seu navegador, clique no ícone de <strong>3 pontinhos verticais (⋮)</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
+                  <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold shrink-0">2</span>
+                  <div>
+                    <span className="font-bold text-white">Vá em &quot;Salvar e compartilhar&quot;:</span>
+                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                      Passe o mouse sobre <strong>&quot;Salvar e compartilhar&quot;</strong> e clique em <strong>&quot;Instalar ROG-TECH...&quot;</strong> (ou <strong>&quot;Criar atalho...&quot;</strong>).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
+                  <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold shrink-0">3</span>
+                  <div>
+                    <span className="font-bold text-white">Confirme a Instalação:</span>
+                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                      Marque a opção <em>&quot;Abrir como janela&quot;</em> e clique em <strong>Instalar</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>O Windows criará o atalho executável oficial na sua Área de Trabalho e Menu Iniciar!</span>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2">
+              <button
+                onClick={() => {
+                  setIsInstallModalOpen(false);
+                  onNavigateTab('local_deploy');
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-colors"
+              >
+                Ver Opção .EXE / Docker
+              </button>
+
+              <button
+                onClick={() => setIsInstallModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono transition-colors shadow-md"
+              >
+                Entendi, vou instalar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

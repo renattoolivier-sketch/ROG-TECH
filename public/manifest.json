@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "ROG-TECH Command Center",
+  "short_name": "ROG-TECH",
+  "description": "Central Integrada de Monitoramento CFTV, Visão Computacional & IoT",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070b12",
+  "theme_color": "#070b12",
+  "categories": ["security", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/assets/aistudio/image_e2be204d.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/aistudio/image_e2be204d.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/aistudio/image_e2be204d.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

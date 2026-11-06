@@ -2,6 +2,12 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import os from 'os';
 import net from 'net';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import dgram from 'dgram';
 
 const app = express();
@@ -205,7 +211,6 @@ app.get('/api/cameras/stream', (req: Request, res: Response) => {
     'Pragma': 'no-cache'
   });
 
-  const { spawn } = require('child_process');
   // Use ffmpeg to pull real RTSP and transcode to lightweight MJPEG frames for browser
   const ffmpeg = spawn('ffmpeg', [
     '-rtsp_transport', 'tcp',
@@ -238,7 +243,7 @@ app.get('/api/cameras/stream', (req: Request, res: Response) => {
   });
 });
 
-// Start server with Vite middleware in dev
+// Start server with Vite middleware in dev or static files in prod
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -247,11 +252,14 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static('dist'));
+    app.use(express.static(path.join(__dirname, 'dist')));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[OmniSight Server] Rodando na porta ${PORT}`);
+    console.log(`[ROG-TECH Server] Rodando na porta ${PORT}`);
   });
 }
 
