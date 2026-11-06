@@ -11,6 +11,7 @@ import { InteractiveMapView } from './components/InteractiveMapView';
 import { SystemLogsView } from './components/SystemLogsView';
 import { ClientMultiTenantManager } from './components/ClientMultiTenantManager';
 import { LocalNetworkDeployGuide } from './components/LocalNetworkDeployGuide';
+import { NvrPlaybackView } from './components/NvrPlaybackView';
 import { 
   INITIAL_CAMERAS, 
   INITIAL_AUTOMATION_RULES, 
@@ -360,6 +361,12 @@ export default function App() {
               onTriggerEvent={handleTriggerEvent}
               rules={rules}
               onOpenAddCameraModal={() => setIsAddCameraModalOpen(true)}
+            />
+          )}
+
+          {activeTab === 'playback' && (
+            <NvrPlaybackView
+              cameras={visibleCameras}
             />
           )}
 

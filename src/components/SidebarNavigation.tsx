@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, Video, Map, Sliders, Zap, 
   FileText, Plus, Radio, Server, Shield, Sparkles, BookOpen, UserCheck, Clock,
-  Building, Download
+  Building, Download, HardDrive
 } from 'lucide-react';
 
 interface SidebarNavigationProps {
@@ -35,6 +35,13 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       label: 'Câmeras',
       sub: '4K Feeds & IA ao Vivo',
       icon: Video
+    },
+    {
+      id: 'playback',
+      label: 'Gravações & NVR',
+      sub: 'Linha do Tempo & Busca IA',
+      icon: HardDrive,
+      badge: 'NOVO'
     },
     {
       id: 'maps',
