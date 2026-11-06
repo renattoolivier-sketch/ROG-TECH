@@ -60,6 +60,6 @@ jobs:
             $tag = "v2.4.0"
           }
           Write-Host "Enviando executáveis para a release $tag..."
-          gh release upload $tag dist/*.exe --clobber
+          gh release upload $tag dist-electron/*.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
