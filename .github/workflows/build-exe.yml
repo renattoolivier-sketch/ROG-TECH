@@ -2,7 +2,7 @@ name: Build Windows EXE (ROG-TECH Desktop)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, principal ]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -10,6 +10,8 @@ on:
 jobs:
   build-windows-exe:
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Código
@@ -19,30 +21,34 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - name: Instalar Dependências
-        run: npm ci
+      - name: Instalar Dependências do Projeto
+        run: npm install --no-audit --prefer-offline
 
       - name: Compilar App React + Vite
         run: npm run build
 
-      - name: Instalar Electron & Electron-Builder
+      - name: Instalar Electron & Ferramentas de Build
         run: npm install --save-dev electron electron-builder
 
-      - name: Gerar Executavel Windows .EXE
-        run: npx electron-builder --win --x64 -c.win.target=nsis -c.extraMetadata.main=electron/main.cjs
+      - name: Gerar Executável Windows .EXE (ROG-TECH Setup)
+        run: npx electron-builder --win --x64 -c.win.target=nsis -c.extraMetadata.main=electron/main.cjs -c.productName="ROG-TECH Command Center" -c.appId="com.rogtech.cctv"
 
-      - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Salvar Artefato EXE (Download Direto)
+        uses: actions/upload-artifact@v4
         with:
+          name: ROG-TECH-Command-Center-Setup-x64
+          path: dist/*.exe
+
+      - name: Criar Lançamento Automático (GitHub Release)
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/principal' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v2.4.0
+          name: ROG-TECH Command Center v2.4.0 (Windows .EXE)
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Salvar Artefato EXE
-        uses: actions/upload-artifact@v4
-        with:
-          name: ROG-TECH-Command-Center-Windows-x64
-          path: dist/*.exe

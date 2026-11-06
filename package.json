@@ -1,13 +1,16 @@
 {
-  "name": "react-example",
+  "name": "rog-tech-command-center",
+  "description": "ROG-TECH Command Center - Central de Inteligencia CFTV, Visao Computacional & IoT",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.4.0",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
     "build": "vite build",
     "preview": "vite preview",
+    "electron:build": "vite build && electron-builder --win --x64",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
