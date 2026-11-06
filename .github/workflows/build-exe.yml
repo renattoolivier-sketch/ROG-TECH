@@ -5,50 +5,61 @@ on:
     branches: [ main, master, principal ]
     tags:
       - 'v*'
+  release:
+    types: [ published, created ]
   workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
 
 jobs:
   build-windows-exe:
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout Código
+      - name: 1. Checkout do Código
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js 20
+      - name: 2. Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Instalar Dependências do Projeto
-        run: npm install --no-audit --prefer-offline
+      - name: 3. Instalar Dependências
+        run: |
+          npm install --no-audit --prefer-offline
 
-      - name: Compilar App React + Vite
-        run: npm run build
+      - name: 4. Compilar Frontend React + Vite
+        run: |
+          npm run build
 
-      - name: Instalar Electron & Ferramentas de Build
-        run: npm install --save-dev electron electron-builder
+      - name: 5. Instalar Electron & Ferramentas
+        run: |
+          npm install --save-dev electron electron-builder
 
-      - name: Gerar Executável Windows .EXE (ROG-TECH Setup)
-        run: npx electron-builder --win --x64 -c.win.target=nsis -c.extraMetadata.main=electron/main.cjs -c.productName="ROG-TECH Command Center" -c.appId="com.rogtech.cctv"
+      - name: 6. Gerar Executáveis Windows (.EXE Portátil + Instalador)
+        run: |
+          npx electron-builder --win --x64
 
-      - name: Salvar Artefato EXE (Download Direto)
+      - name: 7. Salvar Artefatos para Download Direto
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ROG-TECH-Command-Center-Setup-x64
-          path: dist/*.exe
+          name: ROG-TECH-Windows-EXE
+          path: dist-electron/*.exe
+          retention-days: 30
 
-      - name: Criar Lançamento Automático (GitHub Release)
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/principal' || github.ref == 'refs/heads/main'
-        with:
-          tag_name: v2.4.0
-          name: ROG-TECH Command Center v2.4.0 (Windows .EXE)
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: dist/*.exe
+      - name: 8. Anexar Arquivos .EXE na Release do GitHub
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.ref == 'refs/heads/principal'
+        continue-on-error: true
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ([string]::IsNullOrEmpty($tag) -or $tag -eq "principal" -or $tag -eq "main") {
+            $tag = "v2.4.0"
+          }
+          Write-Host "Enviando executáveis para a release $tag..."
+          gh release upload $tag dist-electron/*.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
