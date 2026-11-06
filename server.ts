@@ -32,6 +32,38 @@ function getLocalSubnets() {
   return subnets.length > 0 ? subnets : ['192.168.1.0/24'];
 }
 
+// System Network Info Endpoint: Detects host and client network topology
+app.get('/api/system/network-info', (req: Request, res: Response) => {
+  const interfaces = os.networkInterfaces();
+  const physicalInterfaces: any[] = [];
+  
+  for (const name of Object.keys(interfaces)) {
+    for (const netInfo of interfaces[name] || []) {
+      if (netInfo.family === 'IPv4') {
+        physicalInterfaces.push({
+          name,
+          address: netInfo.address,
+          netmask: netInfo.netmask,
+          internal: netInfo.internal,
+          mac: netInfo.mac
+        });
+      }
+    }
+  }
+
+  const rawClientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+  const isCloudHost = !!(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB || process.env.APP_URL?.includes('run.app'));
+
+  res.json({
+    success: true,
+    serverHostname: os.hostname(),
+    isCloudHost,
+    detectedClientIp: rawClientIp,
+    availableSubnets: getLocalSubnets(),
+    interfaces: physicalInterfaces
+  });
+});
+
 // Network Discovery API Endpoint
 app.post('/api/scan-network', async (req: Request, res: Response) => {
   const { subnet = '192.168.1.0/24', scanType = 'onvif_ws_discovery' } = req.body;

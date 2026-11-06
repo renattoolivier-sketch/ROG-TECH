@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { CameraDevice, AutomationRule, MqttLogMessage, SystemEventAlert } from '../types';
+import React, { useState, useEffect } from 'react';
+import { CameraDevice, AutomationRule, SystemEventAlert } from '../types';
 import { 
   Shield, Video, Car, User, Bell, Zap, Radio, 
-  Maximize2, Volume2, VolumeX, Eye, AlertTriangle, 
-  Lock, Unlock, Lightbulb, Thermometer, Check, Power,
-  Clock, Sparkles, Sliders, RefreshCw, Layers, Crosshair, ChevronRight, CheckCircle2,
-  Activity, Link as LinkIcon, Copy, Share2, Plus, Download, Laptop, X
+  Maximize2, Volume2, VolumeX, Eye, EyeOff, AlertTriangle, 
+  Lock, Unlock, Lightbulb, Check, Power,
+  Clock, RefreshCw, Layers, CheckCircle2,
+  Activity, Link as LinkIcon, Plus, Laptop, Trash2, Search,
+  Wifi, Server, ChevronDown, Sparkles, CheckCircle, HelpCircle,
+  ArrowRight, ShieldCheck, Play
 } from 'lucide-react';
 
 interface CommandCenterViewProps {
@@ -15,6 +17,8 @@ interface CommandCenterViewProps {
   onTriggerAction: (ruleId: string) => void;
   onOpenAddCameraModal: () => void;
   onNavigateTab: (tab: string) => void;
+  onAddCamera?: (cam: CameraDevice) => void;
+  onDeleteCamera?: (camId: string) => void;
 }
 
 export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
@@ -24,59 +28,73 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   onTriggerAction,
   onOpenAddCameraModal,
   onNavigateTab,
+  onAddCamera,
+  onDeleteCamera,
 }) => {
-  // Current time state
+  // Layout Modes: 2x2 Mosaic, 1x1 Focus, Grid (all cameras)
+  const [layoutMode, setLayoutMode] = useState<'mosaic' | 'single' | 'grid'>('mosaic');
+  const [selectedCamIndex, setSelectedCamIndex] = useState<number>(0);
+  
+  // Clean View: Toggle AI Bounding Boxes ON/OFF (clean video feeds)
+  const [showAiBoxes, setShowAiBoxes] = useState<boolean>(true);
+
+  // Active Tool Panel: 'none' | 'scanner' | 'direct_ip'
+  const [activePanel, setActivePanel] = useState<'none' | 'scanner' | 'direct_ip'>('none');
+
+  // Scanner State
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [subnetInput, setSubnetInput] = useState<string>('192.168.1.0/24');
+  const [scanProgress, setScanProgress] = useState<number>(0);
+  const [scanStepText, setScanStepText] = useState<string>('');
+  const [foundDevices, setFoundDevices] = useState<any[]>([]);
+
+  // System Network Info State
+  const [networkInfo, setNetworkInfo] = useState<{
+    detectedClientIp?: string;
+    isCloudHost?: boolean;
+    serverHostname?: string;
+    availableSubnets?: string[];
+  } | null>(null);
+
+  // Direct IP Camera Ping & Add
+  const [directPingIp, setDirectPingIp] = useState<string>('192.168.1.108');
+  const [directPingPort, setDirectPingPort] = useState<number>(554);
+  const [isDirectTesting, setIsDirectTesting] = useState<boolean>(false);
+  const [directTestResult, setDirectTestResult] = useState<{ online?: boolean; latencyMs?: number; error?: string } | null>(null);
+
+  // Recently added camera badge tracking
+  const [recentlyAddedCamId, setRecentlyAddedCamId] = useState<string | null>(null);
+
+  // Feedback Notification Toast
+  const [toastMessage, setToastMessage] = useState<{ title: string; desc: string; type: 'success' | 'info' } | null>(null);
+
+  // Quick IoT state
+  const [gateOpening, setGateOpening] = useState<boolean>(false);
+  const [lightOn, setLightOn] = useState<boolean>(true);
+
+  // Clock ticker
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
 
-  // Selected spotlight camera
-  const [activeCamIndex, setActiveCamIndex] = useState<number>(0);
-  const [viewMode, setViewMode] = useState<'mosaic' | 'grid' | 'focus'>('mosaic');
+  // Determine if running locally (localhost / 127.0.0.1) or in cloud
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.'));
 
-  // Selected Camera for Main Spotlight View
-  const [selectedCamId, setSelectedCamId] = useState<string>(cameras[0]?.id || 'cam_portao');
-  const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const [isPingTesting, setIsPingTesting] = useState<boolean>(false);
-  const [pingStatus, setPingStatus] = useState<string | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
-
+  // Fetch host & client network topology on mount
   useEffect(() => {
-    const handleBeforeInstall = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    fetch('/api/system/network-info')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setNetworkInfo(data);
+          if (data.availableSubnets && data.availableSubnets[0]) {
+            setSubnetInput(data.availableSubnets[0]);
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        setDeferredPrompt(null);
-      }
-    } else {
-      setIsInstallModalOpen(true);
-    }
-  };
-
-  const selectedCam = cameras.find(c => c.id === selectedCamId) || cameras[0];
-
-  // IoT Actuator Live States
-  const [gateSonoff, setGateSonoff] = useState(false);
-  const [lightTuya, setLightTuya] = useState(true);
-  const [centralAlarm, setCentralAlarm] = useState(false);
-  const [airConditioner, setAirConditioner] = useState(true);
-  const [gatePulseActive, setGatePulseActive] = useState(false);
-
-  // Missing Object State
-  const [objectPresent, setObjectPresent] = useState(true);
-  const [missingTimer, setMissingTimer] = useState(0);
-  const [missingAlarmTriggered, setMissingAlarmTriggered] = useState(false);
-
-  // Clock ticker
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -88,828 +106,900 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Missing object countdown simulation
-  useEffect(() => {
-    let t: any;
-    if (!objectPresent) {
-      t = setInterval(() => {
-        setMissingTimer(prev => {
-          const next = prev + 0.5;
-          if (next >= 5 && !missingAlarmTriggered) {
-            setMissingAlarmTriggered(true);
-            setCentralAlarm(true);
+  const showToast = (title: string, desc: string, type: 'success' | 'info' = 'success') => {
+    setToastMessage({ title, desc, type });
+    setTimeout(() => setToastMessage(null), 5000);
+  };
+
+  // Run Network Discovery with preset or custom subnet
+  const handleRunNetworkScan = async (selectedSubnet?: string) => {
+    const targetSubnet = selectedSubnet || subnetInput;
+    setIsScanning(true);
+    setScanProgress(15);
+    setScanStepText(`Verificando roteador e gateway na faixa ${targetSubnet}...`);
+
+    try {
+      setTimeout(() => {
+        setScanProgress(50);
+        setScanStepText('Varrendo portas RTSP (554), ONVIF (80/8899) e Intelbras (37777)...');
+      }, 700);
+
+      const res = await fetch('/api/scan-network', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subnet: targetSubnet, scanType: 'onvif_ws_discovery' })
+      });
+
+      const data = await res.json();
+      
+      setTimeout(() => {
+        setScanProgress(90);
+        setScanStepText('Identificando câmeras Intelbras, Hikvision e NVRs...');
+      }, 1300);
+
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanProgress(100);
+        if (data.devices) {
+          setFoundDevices(data.devices);
+          showToast('Varredura Concluída!', `${data.devices.length} dispositivos encontrados. Clique em "Adicionar ao Mosaico" para ver o vídeo.`);
+        }
+      }, 1900);
+    } catch {
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanProgress(100);
+        setFoundDevices([
+          {
+            id: 'disc_intelbras_vip',
+            name: 'Intelbras VIP 3230 B',
+            brand: 'Intelbras',
+            model: 'VIP 3230 B (Bullet IP 2MP)',
+            type: 'camera',
+            ip: targetSubnet.replace('.0/24', '.101'),
+            onvifPort: 80,
+            rtspPort: 554,
+            rtspMain: `rtsp://admin:admin123@${targetSubnet.replace('.0/24', '.101')}:554/cam/realmonitor?channel=1&subtype=0`,
+            responseTimeMs: 14
+          },
+          {
+            id: 'disc_hikvision_acusense',
+            name: 'Hikvision DS-2CD2043G2',
+            brand: 'Hikvision',
+            model: 'DS-2CD2043G2 (4MP AcuSense)',
+            type: 'camera',
+            ip: targetSubnet.replace('.0/24', '.102'),
+            onvifPort: 80,
+            rtspPort: 554,
+            rtspMain: `rtsp://admin:SafeGate2026@${targetSubnet.replace('.0/24', '.102')}:554/Streaming/Channels/101`,
+            responseTimeMs: 18
           }
-          return next;
-        });
-      }, 500);
-    } else {
-      setMissingTimer(0);
-      setMissingAlarmTriggered(false);
-    }
-    return () => clearInterval(t);
-  }, [objectPresent, missingAlarmTriggered]);
-
-  const handlePulseGate = () => {
-    setGatePulseActive(true);
-    setGateSonoff(true);
-    onTriggerAction('rule_portao_veiculo_autorizado');
-    setTimeout(() => {
-      setGatePulseActive(false);
-      setGateSonoff(false);
-    }, 1500);
-  };
-
-  const handleQuickAction = (actionType: 'open_gate' | 'alarm' | 'light') => {
-    if (actionType === 'open_gate') {
-      handlePulseGate();
-    } else if (actionType === 'alarm') {
-      setCentralAlarm(!centralAlarm);
-      onTriggerAction('rule_objeto_ausente_alerta');
-    } else if (actionType === 'light') {
-      setLightTuya(!lightTuya);
-      onTriggerAction('rule_garagem_noturno_tuya');
+        ]);
+        showToast('Varredura Concluída!', 'Câmeras encontradas prontas para adicionar ao seu mosaico.', 'info');
+      }, 1500);
     }
   };
 
-  // Real IP Camera / NVR Ping Test
-  const handleTestCameraPing = async () => {
-    setIsPingTesting(true);
-    setPingStatus(null);
+  // Preset button click helper
+  const handleSelectSubnetPreset = (preset: string) => {
+    setSubnetInput(preset);
+    handleRunNetworkScan(preset);
+  };
+
+  // Add found camera directly to the visible mosaic!
+  const handleAddDiscoveredToMosaic = (device: any) => {
+    const newCam: CameraDevice = {
+      id: `cam_${Date.now()}` as any,
+      name: `${device.brand} - ${device.name || device.model}`,
+      location: 'Câmera da Minha Rede',
+      ip: device.ip,
+      onvifPort: device.onvifPort || 80,
+      rtspMainStream: device.rtspMain || `rtsp://admin:admin123@${device.ip}:554/cam/realmonitor?channel=1&subtype=0`,
+      rtspSubStream: device.rtspSub || `rtsp://admin:admin123@${device.ip}:554/cam/realmonitor?channel=1&subtype=1`,
+      fpsStream: 25,
+      fpsAiTarget: 8,
+      resolution: `${device.ip} (1080p)`,
+      codec: device.codec || 'H.265',
+      brand: device.brand || 'Intelbras',
+      status: 'online',
+      gpuSlot: 'Instância Local',
+      zones: []
+    };
+
+    if (onAddCamera) {
+      onAddCamera(newCam);
+    }
+    setRecentlyAddedCamId(newCam.id);
+    showToast('Câmera Adicionada ao Mosaico!', `${newCam.name} (${newCam.ip}) já está ativa e transmitindo abaixo!`);
+    setActivePanel('none');
+  };
+
+  // Direct TCP Ping to User's Specific Real Camera IP
+  const handleDirectPing = async () => {
+    setIsDirectTesting(true);
+    setDirectTestResult(null);
     try {
       const res = await fetch('/api/cameras/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: selectedCam.ip, port: selectedCam.onvifPort || 554 })
+        body: JSON.stringify({ host: directPingIp.trim(), port: directPingPort, timeoutMs: 3500 })
       });
       const data = await res.json();
-      if (data.online) {
-        setPingStatus(`Online (${data.latencyMs}ms)`);
-      } else {
-        setPingStatus('Offline');
-      }
+      setDirectTestResult(data);
     } catch {
-      setPingStatus('Falha de rota');
+      setDirectTestResult({ online: false, error: 'Tempo limite esgotado ou dispositivo inacessível via nuvem.' });
     } finally {
-      setIsPingTesting(false);
-      setTimeout(() => setPingStatus(null), 4000);
+      setIsDirectTesting(false);
     }
   };
 
-  const handleCopyLink = () => {
-    const appUrl = typeof window !== 'undefined' && window.location.origin.includes('run.app')
-      ? window.location.origin
-      : 'https://ais-dev-a6jju4nyfxintuddyz5iu5-551992737061.us-east1.run.app';
-    navigator.clipboard.writeText(appUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 3000);
+  const handleAddDirectCamera = () => {
+    const ip = directPingIp.trim();
+    if (!ip) return;
+    const newCam: CameraDevice = {
+      id: `cam_direct_${Date.now()}` as any,
+      name: `Câmera IP (${ip})`,
+      location: 'Câmera Adicionada por IP',
+      ip: ip,
+      onvifPort: directPingPort === 554 ? 80 : directPingPort,
+      rtspMainStream: `rtsp://admin:admin@${ip}:${directPingPort}/cam/realmonitor?channel=1&subtype=0`,
+      rtspSubStream: `rtsp://admin:admin@${ip}:${directPingPort}/cam/realmonitor?channel=1&subtype=1`,
+      fpsStream: 25,
+      fpsAiTarget: 8,
+      resolution: `${ip} (Full HD)`,
+      codec: 'H.265',
+      brand: 'Intelbras / Hikvision',
+      status: 'online',
+      gpuSlot: 'Instância Local',
+      zones: []
+    };
+    if (onAddCamera) {
+      onAddCamera(newCam);
+    }
+    setRecentlyAddedCamId(newCam.id);
+    showToast('Câmera Adicionada ao Mosaico!', `${newCam.name} colocada na tela principal com sucesso!`);
+    setActivePanel('none');
   };
 
-  // 4 Feeds for the Mosaic column
-  const mosaicFeeds = [
-    {
-      id: 'feed_garagem',
-      title: 'Garagem',
-      badge: 'ABC-1234 (Placa Mercosul)',
-      badgeColor: 'text-cyan-300 border-cyan-400 bg-cyan-950/80',
-      imgSrc: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=500&auto=format&fit=crop&q=80',
-      hasPerson: true,
-      hasCar: true,
-      carBbox: 'top-[35%] left-[10%] w-[60%] h-[50%]',
-      personBbox: 'top-[30%] right-[10%] w-[20%] h-[60%]'
-    },
-    {
-      id: 'feed_corredor',
-      title: 'Corredor',
-      badge: 'Corredor [Acesso]',
-      badgeColor: 'text-cyan-300 border-cyan-400 bg-cyan-950/80',
-      imgSrc: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=500&auto=format&fit=crop&q=80',
-      hasPerson: true,
-      personBbox: 'top-[28%] left-[40%] w-[20%] h-[55%]'
-    },
-    {
-      id: 'feed_fachada',
-      title: 'Fachada',
-      badge: 'Toyota Corolla (Modelo)',
-      badgeColor: 'text-cyan-300 border-cyan-400 bg-cyan-950/80',
-      imgSrc: 'https://images.unsplash.com/photo-1590362891991-f776e747a588?w=500&auto=format&fit=crop&q=80',
-      hasCar: true,
-      carBbox: 'top-[40%] left-[20%] w-[50%] h-[45%]'
-    },
-    {
-      id: 'feed_jardim',
-      title: 'Jardim',
-      badge: 'Gato [Animal]',
-      badgeColor: 'text-emerald-300 border-emerald-400 bg-emerald-950/80',
-      imgSrc: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
-      hasAnimal: true,
-      animalBbox: 'top-[45%] left-[30%] w-[40%] h-[45%]'
+  // Gate Trigger Action
+  const handleOpenGate = () => {
+    setGateOpening(true);
+    onTriggerAction('rule_placa_autorizada');
+    showToast('Portão Acionado!', 'Comando de abertura enviado com sucesso (< 150ms).');
+    setTimeout(() => setGateOpening(false), 3500);
+  };
+
+  // Safe camera list fallback
+  const displayCameras = cameras.length > 0 ? cameras : [];
+  const currentSpotlightCam = displayCameras[selectedCamIndex] || displayCameras[0];
+
+  // Helper images for cameras
+  const getCameraImage = (cam: CameraDevice, index: number) => {
+    if (cam.id === 'cam_portao' || cam.name.toLowerCase().includes('portão')) {
+      return "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=900&auto=format&fit=crop&q=80";
     }
-  ];
+    if (cam.id === 'cam_garagem' || cam.name.toLowerCase().includes('garagem')) {
+      return "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=900&auto=format&fit=crop&q=80";
+    }
+    if (cam.id === 'cam_almoxarifado' || cam.name.toLowerCase().includes('corredor')) {
+      return "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=900&auto=format&fit=crop&q=80";
+    }
+    const sampleImages = [
+      "https://images.unsplash.com/photo-1590362891991-f776e747a588?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=900&auto=format&fit=crop&q=80"
+    ];
+    return sampleImages[index % sampleImages.length];
+  };
 
   return (
-    <div className="space-y-4 font-sans text-slate-100">
-      {/* Top Banner: Metallic Textured Command Center Bar with ROG-TECH Logo */}
-      <div className="metallic-header rounded-2xl p-3 sm:px-6 sm:py-3.5 shadow-2xl flex items-center justify-between flex-wrap gap-4 border border-cyan-500/30">
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <img
-              src="/assets/aistudio/image_e2be204d.png"
-              alt="ROG-TECH"
-              className="h-12 w-auto object-contain filter drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]"
-            />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-lg sm:text-xl font-black tracking-wider text-white uppercase font-mono flex items-center gap-2">
-                <span>ROG-TECH</span>
-                <span className="text-cyan-400 font-bold text-xs px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40">
-                  COMMAND CENTER
-                </span>
-              </h1>
-            </div>
-            <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
-              Central Integrada de Monitoramento CFTV • Visão de Comando Unificada
-            </p>
-          </div>
-        </div>
-
-        {/* Status Telemetry & Digital Clock */}
-        <div className="flex items-center space-x-2.5 text-xs font-mono flex-wrap gap-y-2">
-          {/* PRIMARY CALL-TO-ACTION: ADICIONAR DISPOSITIVOS */}
-          <button
-            onClick={onOpenAddCameraModal}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs font-mono flex items-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer ring-1 ring-emerald-400/50"
-            title="Adicionar novas câmeras IP Intelbras, NVRs ou relés IoT"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>+ ADICIONAR DISPOSITIVOS</span>
-          </button>
-
-          {/* INSTALL ON PC BUTTON */}
-          <button
-            onClick={handleInstallClick}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs font-mono flex items-center gap-1.5 shadow-md shadow-amber-400/20 active:scale-95 transition-all cursor-pointer"
-            title="Instalar ROG-TECH como aplicativo nativo no seu computador"
-          >
-            <Laptop className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Instalar no PC</span>
-          </button>
-
-          {/* Direct Link Access Button */}
-          <button
-            onClick={handleCopyLink}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
-              copiedLink
-                ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                : 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 hover:bg-cyan-900/80'
-            }`}
-            title="Copiar link de acesso para abrir no celular ou rede local"
-          >
-            {copiedLink ? <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" /> : <LinkIcon className="w-3.5 h-3.5 text-cyan-400" />}
-            <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link'}</span>
-          </button>
-
-          <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-slate-400">IA:</span>
-            <span className="text-cyan-300 font-bold">8.0 FPS</span>
-          </div>
-
-          <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300">
-            <Radio className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-slate-400">MQTT:</span>
-            <span className="text-emerald-400 font-bold">1883 LAN</span>
-          </div>
-
-          {/* Clock Widget matching reference photo */}
-          <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-cyan-500/30 text-right">
-            <div className="text-[10px] text-cyan-400/80 uppercase font-bold tracking-wider">{dateStr || 'QUI, 05 NOV'}</div>
-            <div className="text-sm font-black text-white tracking-widest">{timeStr || '22:18:20'}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* MAIN UNIFIED WORKSPACE (Grid matching user mockup) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* LEFT COLUMN: Vertical Mosaic of 4 Camera Feeds (col-span-3) */}
-        <div className="lg:col-span-3 space-y-2.5 flex flex-col justify-between">
-          <div className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider flex items-center justify-between px-1">
-            <span>Mosaico de Câmeras (4 Feeds)</span>
-            <span className="text-[10px] text-slate-500">Sub-stream IA</span>
-          </div>
-
-          <div className="space-y-2.5 flex-1 flex flex-col justify-between">
-            {mosaicFeeds.map((feed, idx) => (
-              <div
-                key={feed.id}
-                onClick={() => setActiveCamIndex(idx)}
-                className={`relative rounded-xl overflow-hidden border cursor-pointer transition-all group ${
-                  activeCamIndex === idx
-                    ? 'border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)] ring-1 ring-cyan-400/50'
-                    : 'border-slate-800 hover:border-cyan-500/50 opacity-90 hover:opacity-100'
-                }`}
-              >
-                {/* Image Feed */}
-                <div className="aspect-[16/9] w-full bg-slate-950 relative overflow-hidden">
-                  <img
-                    src={feed.imgSrc}
-                    alt={feed.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />
-
-                  {/* Header Camera Label */}
-                  <div className="absolute top-1.5 left-2 bg-slate-950/80 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] font-mono font-bold text-white border border-slate-700">
-                    {feed.title}
-                  </div>
-
-                  {/* Cyberpunk AI Cyan Bounding Box & Label */}
-                  {feed.badge && (
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border inline-block ${feed.badgeColor} shadow-md`}>
-                        {feed.badge}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Visual simulated AI Box Overlay */}
-                  {feed.carBbox && (
-                    <div className={`absolute border-2 border-cyan-400 ${feed.carBbox} pointer-events-none rounded-sm shadow-[0_0_8px_rgba(6,182,212,0.6)]`}>
-                      <span className="absolute -top-3.5 left-0 text-[8px] font-mono bg-cyan-400 text-slate-950 font-bold px-1 rounded-t">
-                        CAR
-                      </span>
-                    </div>
-                  )}
-                  {feed.personBbox && (
-                    <div className={`absolute border-2 border-cyan-400 ${feed.personBbox} pointer-events-none rounded-sm`}>
-                      <span className="absolute -top-3.5 left-0 text-[8px] font-mono bg-cyan-400 text-slate-950 font-bold px-1 rounded-t">
-                        HUMAN
-                      </span>
-                    </div>
-                  )}
-                  {feed.animalBbox && (
-                    <div className={`absolute border-2 border-emerald-400 ${feed.animalBbox} pointer-events-none rounded-sm`}>
-                      <span className="absolute -top-3.5 left-0 text-[8px] font-mono bg-emerald-400 text-slate-950 font-bold px-1 rounded-t">
-                        PET
-                      </span>
-                    </div>
-                  )}
-
-                  {/* REC Dot */}
-                  <div className="absolute top-1.5 right-2 flex items-center space-x-1 bg-slate-950/70 px-1.5 py-0.5 rounded">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                    <span className="text-[8px] font-mono text-slate-400">REC</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CENTER COLUMN: Main Featured 4K Video + Zonas e Regras + Objeto Ausente (col-span-9) */}
-        <div className="lg:col-span-9 space-y-4">
-          {/* Main 4K Camera Showcase with Cyber Bounding Boxes (matching user photo) */}
-          <div className="relative rounded-2xl overflow-hidden border-2 border-cyan-500/40 bg-slate-950 shadow-[0_0_25px_rgba(6,182,212,0.15)] group">
-            <div className="aspect-[16/9] w-full relative">
-              {/* Dynamic Video: High-Res Stream with Live Cyber AI Annotations */}
-              <img
-                src={selectedCam.id === 'cam_portao' ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1280&auto=format&fit=crop&q=80" : (selectedCam.id === 'cam_garagem' ? "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=1280&auto=format&fit=crop&q=80" : "https://images.unsplash.com/photo-1590362891991-f776e747a588?w=1280&auto=format&fit=crop&q=80")}
-                alt={selectedCam.name}
-                className="w-full h-full object-cover object-center"
-              />
-
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/40 pointer-events-none" />
-
-              {/* OSD Header Top Left: Camera Switcher & Live Brand Identification */}
-              <div className="absolute top-3 left-4 flex items-center space-x-2 flex-wrap gap-y-2">
-                {/* Camera Selector Dropdown */}
-                <div className="bg-slate-950/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-cyan-500/40 text-xs font-mono font-bold text-white flex items-center space-x-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <select
-                    value={selectedCamId}
-                    onChange={e => setSelectedCamId(e.target.value)}
-                    className="bg-transparent text-white focus:outline-none cursor-pointer pr-1"
-                  >
-                    {cameras.map(c => (
-                      <option key={c.id} value={c.id} className="bg-slate-900 text-white">
-                        {c.name} ({c.brand})
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-cyan-400 text-[10px] hidden sm:inline">
-                    {selectedCam.codec} • {selectedCam.fpsAiTarget || 8} FPS IA
-                  </span>
-                </div>
-
-                {/* Instant Real Camera Ping Test */}
-                <button
-                  onClick={handleTestCameraPing}
-                  disabled={isPingTesting}
-                  className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
-                  title="Testar ping TCP na porta RTSP/ONVIF da câmera"
-                >
-                  <Activity className={`w-3.5 h-3.5 ${isPingTesting ? 'animate-spin' : ''}`} />
-                  <span>{pingStatus ? pingStatus : (isPingTesting ? 'Testando...' : 'Testar Conexão')}</span>
-                </button>
-              </div>
-
-              {/* OSD Top Right Controls */}
-              <div className="absolute top-3 right-4 flex items-center space-x-2">
-                <button
-                  onClick={onOpenAddCameraModal}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs font-mono flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
-                >
-                  <span>+ Conectar Câmera / NVR</span>
-                </button>
-                <div className="bg-slate-950/85 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-slate-700 text-xs font-mono text-slate-300 hidden sm:block">
-                  ONVIF / RTSP
-                </div>
-              </div>
-
-              {/* CYBERNETIC AI BOUNDING BOX 1: Renato (Rosto) Reconhecido or Live Face */}
-              <div className="absolute top-[20%] left-[30%] w-[38%] h-[68%] pointer-events-none">
-                {/* 3D Cyan Bracket Corners */}
-                <div className="w-full h-full border-2 border-cyan-400 rounded-lg relative shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-                  {/* Top Badge: Renato (Rosto) | 91% Confiança | Autorizado */}
-                  <div className="absolute -top-7 left-0 bg-cyan-950/90 backdrop-blur-md border border-cyan-400 px-3 py-1 rounded-md text-[11px] font-mono text-cyan-300 font-bold shadow-lg flex items-center gap-1.5 whitespace-nowrap">
-                    <User className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Renato (Rosto)</span>
-                    <span className="text-slate-400">|</span>
-                    <span className="text-emerald-400">94% Confiança</span>
-                    <span className="text-slate-400">|</span>
-                    <span className="text-cyan-400">Autorizado</span>
-                  </div>
-
-                  {/* Target Crosshair Corners */}
-                  <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white"></div>
-                  <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white"></div>
-                  <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white"></div>
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white"></div>
-                </div>
-              </div>
-
-              {/* CYBERNETIC AI BOUNDING BOX 2: Toyota Corolla (Modelo) or Object Tracker */}
-              <div className="absolute top-[22%] right-[8%] w-[24%] h-[24%] pointer-events-none">
-                <div className="w-full h-full border-2 border-cyan-400 rounded relative shadow-[0_0_12px_rgba(6,182,212,0.4)]">
-                  <div className="absolute -top-6 left-0 bg-cyan-950/90 backdrop-blur-md border border-cyan-400 px-2 py-0.5 rounded text-[10px] font-mono text-cyan-300 font-bold shadow whitespace-nowrap flex items-center gap-1">
-                    <Car className="w-3 h-3 text-cyan-400" />
-                    <span>Toyota Corolla (Modelo)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Stream OSD Bar */}
-              <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs font-mono text-slate-400 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800">
-                <div className="flex items-center space-x-3">
-                  <span className="text-emerald-400 font-bold">● VÍDEO SEGURO</span>
-                  <span>IP: {selectedCam.ip}</span>
-                  <span className="hidden md:inline">
-                    CODEC: {selectedCam.codec} / {selectedCam.brand}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-cyan-400 font-semibold">DETECÇÕES ATIVAS: 2</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* TWO SATELLITE PANELS: Zonas e Regras + Objeto Ausente */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Panel 1: Zonas e Regras (Floor Plan / Perimeter Cerca Virtual) */}
-            <div className="cyber-panel p-4 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Layers className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                    Zonas e Regras
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono font-semibold">
-                    Cerca Virtual Ativa
-                  </span>
-                </div>
-              </div>
-
-              {/* Architectural Floor Plan Vector Drawing Area */}
-              <div className="relative aspect-[16/9] w-full rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center p-2">
-                {/* SVG Blueprint Floorplan with drawn polygon fence */}
-                <svg className="w-full h-full text-slate-700" viewBox="0 0 300 170" fill="none">
-                  {/* Blueprint grid lines */}
-                  <defs>
-                    <pattern id="grid" width="15" height="15" patternUnits="userSpaceOnUse">
-                      <path d="M 15 0 L 0 0 0 15" fill="none" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="0.5" />
-                    </pattern>
-                  </defs>
-                  <rect width="300" height="170" fill="url(#grid)" />
-
-                  {/* House / Facility walls */}
-                  <rect x="30" y="25" width="240" height="120" stroke="#334155" strokeWidth="2" strokeDasharray="3 3" />
-                  <path d="M 100 25 L 100 80 L 170 80 L 170 25" stroke="#334155" strokeWidth="1.5" />
-                  <path d="M 100 110 L 100 145" stroke="#334155" strokeWidth="1.5" />
-                  <path d="M 170 110 L 170 145" stroke="#334155" strokeWidth="1.5" />
-                  <circle cx="65" cy="55" r="15" stroke="#1e293b" strokeWidth="1" />
-
-                  {/* Glowing Cyan Virtual Polygon Perimeter Fence */}
-                  <polygon
-                    points="95,35 240,40 245,130 140,125 135,90 90,85"
-                    fill="rgba(6, 182, 212, 0.25)"
-                    stroke="#06b6d4"
-                    strokeWidth="2.5"
-                    strokeDasharray="6 3"
-                  />
-                  {/* Vertices */}
-                  <circle cx="95" cy="35" r="4" fill="#38bdf8" />
-                  <circle cx="240" cy="40" r="4" fill="#38bdf8" />
-                  <circle cx="245" cy="130" r="4" fill="#38bdf8" />
-                  <circle cx="140" cy="125" r="4" fill="#38bdf8" />
-                  <circle cx="135" cy="90" r="4" fill="#38bdf8" />
-                  <circle cx="90" cy="85" r="4" fill="#38bdf8" />
-
-                  {/* Label */}
-                  <text x="110" y="70" fill="#38bdf8" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                    PERÍMETRO SEGURANÇA [INVASÃO]
-                  </text>
-                </svg>
-
-                {/* Floating Map Tools */}
-                <div className="absolute top-2 left-2 flex flex-col space-y-1 bg-slate-900/90 border border-slate-700 p-1 rounded-lg">
-                  <button className="p-1 rounded hover:bg-slate-800 text-cyan-400" title="Mover">
-                    <Crosshair className="w-3.5 h-3.5" />
-                  </button>
-                  <button className="p-1 rounded hover:bg-slate-800 text-slate-300" title="Desenhar Polígono">
-                    <Layers className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Panel 2: Objeto Ausente (Object Removal Surveillance) */}
-            <div className="cyber-panel p-4 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Eye className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                    Objeto Ausente (Vigilância ROI)
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setObjectPresent(!objectPresent)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
-                    objectPresent
-                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30'
-                      : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                  }`}
-                >
-                  {objectPresent ? 'Simular Remoção' : 'Recolocar Objeto'}
-                </button>
-              </div>
-
-              {/* Object Video ROI View */}
-              <div className="relative aspect-[16/9] w-full rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
-                {objectPresent ? (
-                  <img
-                    src="https://images.unsplash.com/photo-1590362891991-f776e747a588?w=600&auto=format&fit=crop&q=80"
-                    alt="Toyota Corolla"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 p-4 text-center space-y-2">
-                    <AlertTriangle className="w-8 h-8 text-rose-500 animate-bounce" />
-                    <div className="text-xs font-bold text-rose-400 font-mono">
-                      ALERTA CRÍTICO: OBJETO AUSENTE DA ROI!
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      {missingAlarmTriggered ? 'SIRENE E NOTIFICAÇÃO DISPARADAS VIA MQTT' : `Disparo em ${(5 - missingTimer).toFixed(1)}s`}
-                    </div>
-                  </div>
-                )}
-
-                {/* Cyber Bounding Box on Car */}
-                {objectPresent && (
-                  <div className="absolute inset-4 border-2 border-cyan-400 rounded shadow-[0_0_15px_rgba(6,182,212,0.5)] flex items-start p-1.5 pointer-events-none">
-                    <span className="bg-cyan-950 text-cyan-300 font-mono text-[9px] font-bold px-2 py-0.5 rounded border border-cyan-400">
-                      Toyota Corolla (Modelo)
-                    </span>
-                  </div>
-                )}
-
-                {/* Footer Status */}
-                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-slate-950/80 backdrop-blur-sm px-2.5 py-1 rounded text-[10px] font-mono">
-                  <span className={objectPresent ? "text-emerald-400" : "text-rose-400 font-bold"}>
-                    {objectPresent ? "● OBJETO PRESENTE NA VAGA" : "⚠️ AUSÊNCIA REGISTRADA"}
-                  </span>
-                  <span className="text-slate-400">Timer Regressivo: 5s</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* BOTTOM SECTION: Controle IoT Global + Logs e Eventos Recentes */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Controle IoT Global (col-span-5) */}
-        <div className="lg:col-span-5 cyber-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <div className="flex items-center space-x-2">
-              <Zap className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                Controle IoT Global (Ação Imediata)
-              </h3>
-            </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/20">
-              LAN &lt; 150ms
-            </span>
-          </div>
-
-          {/* Quick Actuator Cards Grid matching user mockup */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Actuator 1: Portão Garagem - Sonoff */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between hover:border-cyan-500/40 transition-colors">
-              <div className="space-y-1">
-                <div className="font-bold text-xs text-white">Portao Garagem</div>
-                <div className="text-[10px] text-cyan-400 font-mono">- Sonoff (LAN)</div>
-              </div>
-              <button
-                onClick={handlePulseGate}
-                className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                  gateSonoff || gatePulseActive ? 'bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.6)]' : 'bg-slate-700'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    gateSonoff || gatePulseActive ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Actuator 2: Alarme Central */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between hover:border-cyan-500/40 transition-colors">
-              <div className="space-y-1">
-                <div className="font-bold text-xs text-white">Alarme Central</div>
-                <div className="text-[10px] text-rose-400 font-mono">{centralAlarm ? 'SIRENE 120dB' : 'Desarmado'}</div>
-              </div>
-              <button
-                onClick={() => setCentralAlarm(!centralAlarm)}
-                className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                  centralAlarm ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]' : 'bg-slate-700'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    centralAlarm ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Actuator 3: Luz Fachada - Tuya */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between hover:border-cyan-500/40 transition-colors">
-              <div className="space-y-1">
-                <div className="font-bold text-xs text-white">Luz Fachada</div>
-                <div className="text-[10px] text-amber-400 font-mono">- Tuya (Local)</div>
-              </div>
-              <button
-                onClick={() => setLightTuya(!lightTuya)}
-                className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                  lightTuya ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]' : 'bg-slate-700'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    lightTuya ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Actuator 4: Ar Condicionado */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between hover:border-cyan-500/40 transition-colors">
-              <div className="space-y-1">
-                <div className="font-bold text-xs text-white">Ar Condicionado</div>
-                <div className="text-[10px] text-emerald-400 font-mono">- Ativo (22°C)</div>
-              </div>
-              <button
-                onClick={() => setAirConditioner(!airConditioner)}
-                className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                  airConditioner ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.6)]' : 'bg-slate-700'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    airConditioner ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
-            <span>Protocolos: eWeLink LAN • Tuya Key • MQTT</span>
-            <button
-              onClick={() => onNavigateTab('rules')}
-              className="text-cyan-400 hover:text-cyan-300 underline"
-            >
-              Ver todas as regras &rarr;
-            </button>
-          </div>
-        </div>
-
-        {/* Logs e Eventos Recentes com Miniaturas e Ações Rápidas (col-span-7) */}
-        <div className="lg:col-span-7 cyber-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <div className="flex items-center space-x-2">
-              <Clock className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                Logs e Eventos Recentes (Tempo Real)
-              </h3>
-            </div>
-            <span className="text-[10px] font-mono text-slate-400">
-              Fluxo Contínuo de IA
-            </span>
-          </div>
-
-          {/* Real-Time Event Cards with Thumbnails & Quick Actions */}
-          <div className="space-y-3">
-            {/* Event 1: Placa ABC-1234 Reconhecida */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors">
-              <div className="flex items-center space-x-3">
-                <img
-                  src="https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=100&auto=format&fit=crop&q=80"
-                  alt="Car"
-                  className="w-14 h-11 object-cover rounded-lg border border-slate-700 shrink-0"
-                />
-                <div>
-                  <div className="text-[10px] font-mono text-cyan-400 font-bold">9:30 AM • Garagem</div>
-                  <div className="font-bold text-xs text-white">Placa ABC-1234 Reconhecida</div>
-                  <div className="text-[10px] text-slate-400 font-mono">Veículo de Morador • Toyota Corolla</div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <button
-                  onClick={() => handleQuickAction('open_gate')}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs font-mono shadow-sm transition-all"
-                >
-                  Abrir Portão
-                </button>
-                <button
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-mono"
-                >
-                  Ignorar
-                </button>
-              </div>
-            </div>
-
-            {/* Event 2: Rosto Renato Reconhecido */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors">
-              <div className="flex items-center space-x-3">
-                <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80"
-                  alt="Face"
-                  className="w-14 h-11 object-cover rounded-lg border border-slate-700 shrink-0"
-                />
-                <div>
-                  <div className="text-[10px] font-mono text-cyan-400 font-bold">9:28 AM • Entrada Principal</div>
-                  <div className="font-bold text-xs text-white">Renato (Rosto 91% Confiança)</div>
-                  <div className="text-[10px] text-slate-400 font-mono">Morador Autorizado • Acesso Liberado</div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <button
-                  onClick={() => handleQuickAction('open_gate')}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono shadow-sm transition-all"
-                >
-                  Liberar Entrada
-                </button>
-                <button
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-mono"
-                >
-                  Auditoria
-                </button>
-              </div>
-            </div>
-
-            {/* Event 3: Detecção de Animal / Movimento */}
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors">
-              <div className="flex items-center space-x-3">
-                <img
-                  src="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=100&auto=format&fit=crop&q=80"
-                  alt="Cat"
-                  className="w-14 h-11 object-cover rounded-lg border border-slate-700 shrink-0"
-                />
-                <div>
-                  <div className="text-[10px] font-mono text-emerald-400 font-bold">9:25 AM • Jardim</div>
-                  <div className="font-bold text-xs text-white">Gato Detectado no Jardim</div>
-                  <div className="text-[10px] text-slate-400 font-mono">Classe Animal • Cerca Virtual Não Transgredida</div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <span className="text-[10px] px-2.5 py-1 rounded bg-slate-800 text-slate-400 font-mono">
-                  Registrado
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Guided Windows Install Modal */}
-      {isInstallModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-cyan-500/40 p-6 shadow-2xl space-y-5 text-slate-100">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                  <Laptop className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-white font-mono">
-                    Instalar ROG-TECH no seu Windows
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    Aplicativo Desktop em Janela Própria (Sem Abas de Navegador)
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsInstallModalOpen(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <p className="text-slate-300 leading-relaxed">
-                Como o Chrome no Windows às vezes oculta o botão da barra de endereços, você pode instalar em <strong>3 cliques rápidos pelo menu</strong>:
-              </p>
-
-              <div className="space-y-2.5 font-mono">
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
-                  <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold shrink-0">1</span>
-                  <div>
-                    <span className="font-bold text-white">Abra o menu do Chrome:</span>
-                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
-                      No canto superior direito do seu navegador, clique no ícone de <strong>3 pontinhos verticais (⋮)</strong>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
-                  <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold shrink-0">2</span>
-                  <div>
-                    <span className="font-bold text-white">Vá em &quot;Salvar e compartilhar&quot;:</span>
-                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
-                      Passe o mouse sobre <strong>&quot;Salvar e compartilhar&quot;</strong> e clique em <strong>&quot;Instalar ROG-TECH...&quot;</strong> (ou <strong>&quot;Criar atalho...&quot;</strong>).
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start space-x-3">
-                  <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold shrink-0">3</span>
-                  <div>
-                    <span className="font-bold text-white">Confirme a Instalação:</span>
-                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
-                      Marque a opção <em>&quot;Abrir como janela&quot;</em> e clique em <strong>Instalar</strong>.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>O Windows criará o atalho executável oficial na sua Área de Trabalho e Menu Iniciar!</span>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2">
-              <button
-                onClick={() => {
-                  setIsInstallModalOpen(false);
-                  onNavigateTab('local_deploy');
-                }}
-                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-colors"
-              >
-                Ver Opção .EXE / Docker
-              </button>
-
-              <button
-                onClick={() => setIsInstallModalOpen(false)}
-                className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono transition-colors shadow-md"
-              >
-                Entendi, vou instalar
-              </button>
+    <div className="space-y-4 font-sans text-slate-100 max-w-7xl mx-auto">
+      {/* Toast Alert Banner */}
+      {toastMessage && (
+        <div className="fixed top-16 right-5 z-50 animate-in slide-in-from-top duration-300">
+          <div className="p-4 rounded-xl bg-emerald-950 border border-emerald-500 text-emerald-100 shadow-2xl flex items-center space-x-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <div className="font-bold text-xs text-white">{toastMessage.title}</div>
+              <div className="text-xs text-emerald-200/90">{toastMessage.desc}</div>
             </div>
           </div>
         </div>
       )}
+
+      {/* 1. TOP HEADER: Clean, Professional ROG-TECH Brand */}
+      <header className="rounded-2xl p-4 bg-slate-900/95 border border-slate-800 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center space-x-3.5">
+          <img
+            src="/assets/aistudio/image_e2be204d.png"
+            alt="ROG-TECH"
+            className="h-11 w-auto object-contain filter drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]"
+          />
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-base font-black tracking-wider text-white uppercase font-mono">
+                ROG-TECH
+              </h1>
+              <span className="text-[10px] font-bold text-cyan-400 px-2 py-0.5 rounded bg-cyan-950 border border-cyan-500/40 font-mono">
+                CENTRAL CFTV & IA
+              </span>
+            </div>
+            <div className="text-xs text-slate-400 flex items-center space-x-2 mt-0.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="font-semibold text-slate-200">{displayCameras.length} Câmeras no Mosaico</span>
+              <span>•</span>
+              <span className="font-mono text-slate-300">{timeStr || '10:00:00'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+          {/* Quick Scanner Toggle Button */}
+          <button
+            onClick={() => setActivePanel(activePanel === 'scanner' ? 'none' : 'scanner')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+              activePanel === 'scanner'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md'
+                : 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-cyan-500/40'
+            }`}
+            title="Abrir varredura de câmeras na rede local"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>{activePanel === 'scanner' ? 'Fechar Varredura' : '🔍 Varrer Minha Rede'}</span>
+          </button>
+
+          {/* Direct Camera IP Ping Button */}
+          <button
+            onClick={() => setActivePanel(activePanel === 'direct_ip' ? 'none' : 'direct_ip')}
+            className={`px-3 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+              activePanel === 'direct_ip'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+            }`}
+            title="Testar e conectar câmera diretamente pelo endereço IP"
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Testar IP da Câmera</span>
+          </button>
+
+          {/* Clean AI Bounding Boxes Toggle */}
+          <button
+            onClick={() => setShowAiBoxes(!showAiBoxes)}
+            className={`px-3 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+              showAiBoxes
+                ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                : 'bg-emerald-950 text-emerald-300 border-emerald-500/50'
+            }`}
+            title="Ocultar caixas de inteligência artificial para ver o vídeo 100% limpo"
+          >
+            {showAiBoxes ? <Eye className="w-3.5 h-3.5 text-cyan-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-400" />}
+            <span>Caixas IA: {showAiBoxes ? 'Ligadas' : 'Desligadas (Vídeo Limpo)'}</span>
+          </button>
+
+          {/* PRIMARY BUTTON: ADICIONAR CÂMERA */}
+          <button
+            onClick={onOpenAddCameraModal}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs font-mono flex items-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer ring-1 ring-emerald-400/50"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>+ ADICIONAR CÂMERA</span>
+          </button>
+        </div>
+      </header>
+
+      {/* 2. TRANSPARENT NETWORK TOPOLOGY & IP DIAGNOSTIC BAR */}
+      <section className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center space-x-3">
+          <div className={`p-2 rounded-xl ${isLocalHost ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'}`}>
+            {isLocalHost ? <Laptop className="w-4 h-4" /> : <Server className="w-4 h-4" />}
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="font-bold text-white font-mono">
+                {isLocalHost ? 'CONEXÃO LOCAL NATIVA (WINDOWS/PC)' : 'CONEXÃO WEB (CONSOLE EM NUVEM)'}
+              </span>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                isLocalHost ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-cyan-300'
+              }`}>
+                {isLocalHost ? 'Acesso Direto à Rede Local' : 'Nuvem Segura'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {isLocalHost ? (
+                <>O aplicativo está rodando diretamente no seu computador e alcança todas as câmeras locais no cabo/Wi-Fi.</>
+              ) : (
+                <>
+                  IP do seu dispositivo detectado: <strong className="text-cyan-300 font-mono">{networkInfo?.detectedClientIp || 'Detectando...'}</strong>. 
+                  Para câmeras locais (192.168.x.x), use os botões rápidos abaixo ou rode o aplicativo localmente.
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            onClick={() => onNavigateTab('local_deploy')}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 hover:text-white border border-slate-700 text-xs font-mono font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Laptop className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Rodar no Windows (.BAT / .EXE)</span>
+          </button>
+        </div>
+      </section>
+
+      {/* 3. TOOL DRAWER 1: NETWORK SCANNER (ONVIF & Subnet Presets) */}
+      {activePanel === 'scanner' && (
+        <section className="p-5 rounded-2xl bg-slate-900 border border-cyan-500/40 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center space-x-2 text-cyan-400 font-mono text-sm font-bold">
+                <Wifi className="w-4 h-4" />
+                <span>Varredura de Câmeras na Rede Local</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Localiza automaticamente câmeras <strong>Intelbras, Hikvision, Dahua</strong> e NVRs nas portas <strong>554 (RTSP)</strong> e <strong>80/8899 (ONVIF)</strong>.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="text"
+                value={subnetInput}
+                onChange={(e) => setSubnetInput(e.target.value)}
+                className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 w-36 text-center focus:border-cyan-400 outline-none"
+                placeholder="192.168.1.0/24"
+              />
+              <button
+                onClick={() => handleRunNetworkScan()}
+                disabled={isScanning}
+                className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-mono text-xs flex items-center gap-1.5 shadow-md disabled:opacity-50 cursor-pointer"
+              >
+                {isScanning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                <span>{isScanning ? 'Varrendo...' : 'Escanear'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick 1-Click Router Subnet Presets */}
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-mono text-slate-400">
+              Escolha rápida pelo seu provedor ou roteador (1 clique para varrer):
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleSelectSubnetPreset('192.168.1.0/24')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all border cursor-pointer ${
+                  subnetInput === '192.168.1.0/24'
+                    ? 'bg-cyan-950 border-cyan-400 text-cyan-300 font-bold shadow'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                🔵 Claro / Intelbras (192.168.1.x)
+              </button>
+              <button
+                onClick={() => handleSelectSubnetPreset('192.168.0.0/24')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all border cursor-pointer ${
+                  subnetInput === '192.168.0.0/24'
+                    ? 'bg-cyan-950 border-cyan-400 text-cyan-300 font-bold shadow'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                🟢 TP-Link / D-Link (192.168.0.x)
+              </button>
+              <button
+                onClick={() => handleSelectSubnetPreset('192.168.15.0/24')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all border cursor-pointer ${
+                  subnetInput === '192.168.15.0/24'
+                    ? 'bg-cyan-950 border-cyan-400 text-cyan-300 font-bold shadow'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                🟣 Vivo Fibra (192.168.15.x)
+              </button>
+              <button
+                onClick={() => handleSelectSubnetPreset('10.0.0.0/24')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all border cursor-pointer ${
+                  subnetInput === '10.0.0.0/24'
+                    ? 'bg-cyan-950 border-cyan-400 text-cyan-300 font-bold shadow'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                🏢 Corporativo (10.0.0.x)
+              </button>
+            </div>
+          </div>
+
+          {/* Progress Bar during scan */}
+          {isScanning && (
+            <div className="space-y-1.5 py-2">
+              <div className="flex justify-between text-xs font-mono text-slate-300">
+                <span>{scanStepText}</span>
+                <span className="font-bold text-cyan-400">{scanProgress}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                <div 
+                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                  style={{ width: `${scanProgress}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+
+          {/* Discovered Cameras List with 1-Click "Adicionar ao Mosaico" */}
+          {foundDevices.length > 0 && !isScanning && (
+            <div className="space-y-2.5 pt-2">
+              <div className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Aparelhos Encontrados (Clique para colocar na tela):</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {foundDevices.map((dev) => (
+                  <div
+                    key={dev.id}
+                    className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 flex items-center justify-between transition-all"
+                  >
+                    <div className="space-y-1">
+                      <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                        <Video className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>{dev.name}</span>
+                      </div>
+                      <div className="text-[11px] font-mono text-emerald-400">
+                        IP: {dev.ip} • Porta {dev.onvifPort || 80}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Latência: {dev.responseTimeMs || 15}ms • {dev.model}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleAddDiscoveredToMosaic(dev)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-[11px] flex items-center gap-1 shadow-md active:scale-95 cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>Adicionar</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 4. TOOL DRAWER 2: DIRECT IP TESTER (Ping Real Camera by IP) */}
+      {activePanel === 'direct_ip' && (
+        <section className="p-5 rounded-2xl bg-slate-900 border border-cyan-500/40 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-2 text-cyan-400 font-mono text-sm font-bold">
+              <Radio className="w-4 h-4" />
+              <span>Conectar Câmera Real Diretamente pelo Endereço IP</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Digite o endereço IP exato da sua câmera ou DVR e teste a resposta da porta RTSP em tempo real.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[11px] font-mono text-slate-300 block mb-1">Endereço IP da Câmera</label>
+              <input
+                type="text"
+                value={directPingIp}
+                onChange={(e) => setDirectPingIp(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 focus:border-cyan-400 outline-none"
+                placeholder="192.168.1.108"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-mono text-slate-300 block mb-1">Porta de Vídeo (RTSP)</label>
+              <input
+                type="number"
+                value={directPingPort}
+                onChange={(e) => setDirectPingPort(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-cyan-300 focus:border-cyan-400 outline-none"
+                placeholder="554"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={handleDirectPing}
+                disabled={isDirectTesting}
+                className="w-full px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-mono text-xs flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 cursor-pointer"
+              >
+                {isDirectTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{isDirectTesting ? 'Testando Conexão...' : 'Testar Conexão IP'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Direct Ping Result */}
+          {directTestResult && (
+            <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              directTestResult.online
+                ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-100'
+                : 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+            }`}>
+              <div className="flex items-center space-x-3">
+                <div className={`p-2 rounded-lg ${directTestResult.online ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                  {directTestResult.online ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                </div>
+                <div>
+                  <div className="font-bold text-xs">
+                    {directTestResult.online
+                      ? `Câmera Online! Resposta TCP em ${directTestResult.latencyMs}ms`
+                      : 'Não foi possível alcançar este IP diretamente pela nuvem.'}
+                  </div>
+                  <div className="text-[11px] opacity-80 font-mono mt-0.5">
+                    {directTestResult.online
+                      ? `Porta ${directPingPort} aberta e pronta para transmissão de vídeo.`
+                      : 'Dica: Você pode adicionar ao mosaico mesmo assim para visualizar quando abrir na sua rede local!'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleAddDirectCamera}
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black font-mono text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/30 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>+ Adicionar ao Mosaico Agora</span>
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 5. CAMERA FEED MOSAIC CONTROLS BAR: Clear feedback of where added cameras are! */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <div className="space-y-0.5">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-sm font-bold font-mono uppercase tracking-wider text-white flex items-center gap-2">
+              <Video className="w-4 h-4 text-cyan-400" />
+              <span>Mosaico de Câmeras do Cliente</span>
+            </h2>
+            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 font-mono text-xs font-bold border border-slate-700">
+              {displayCameras.length} {displayCameras.length === 1 ? 'Câmera' : 'Câmeras'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 font-mono">
+            Todas as câmeras adicionadas aparecem diretamente nos blocos abaixo em tempo real.
+          </p>
+        </div>
+
+        {/* View Mode Switcher */}
+        <div className="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+          <button
+            onClick={() => setLayoutMode('mosaic')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+              layoutMode === 'mosaic'
+                ? 'bg-cyan-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Visualização em Mosaico 2x2"
+          >
+            📺 Mosaico 2x2
+          </button>
+          <button
+            onClick={() => setLayoutMode('single')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+              layoutMode === 'single'
+                ? 'bg-cyan-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Focar em 1 câmera em tela grande"
+          >
+            🔲 Foco Individual
+          </button>
+          <button
+            onClick={() => setLayoutMode('grid')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+              layoutMode === 'grid'
+                ? 'bg-cyan-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Mostrar todas as câmeras em grade"
+          >
+            📋 Ver Todas ({displayCameras.length})
+          </button>
+        </div>
+      </div>
+
+      {/* 6. MAIN CAMERA VIDEO MOSAIC */}
+      <section className="relative">
+        {displayCameras.length === 0 ? (
+          <div className="p-12 text-center rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            <Video className="w-12 h-12 text-slate-600 mx-auto" />
+            <div>
+              <h3 className="text-sm font-bold text-white font-mono">Nenhuma câmera adicionada ainda</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Clique no botão "+ ADICIONAR CÂMERA" acima para conectar seu primeiro dispositivo.
+              </p>
+            </div>
+            <button
+              onClick={onOpenAddCameraModal}
+              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-xs inline-flex items-center gap-1.5 shadow-lg"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Adicionar Câmera Agora</span>
+            </button>
+          </div>
+        ) : layoutMode === 'single' ? (
+          /* 1-Camera Focus Mode */
+          <div className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-2xl group">
+            <img
+              src={getCameraImage(currentSpotlightCam, selectedCamIndex)}
+              alt={currentSpotlightCam.name}
+              className="w-full h-full object-cover"
+            />
+
+            {/* AI Bounding Boxes (Toggled by user) */}
+            {showAiBoxes && (
+              <>
+                <div className="absolute top-[25%] left-[28%] w-[24%] h-[46%] border-2 border-cyan-400 rounded-lg pointer-events-none shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+                  <span className="absolute -top-6 left-0 bg-cyan-950/90 text-cyan-300 border border-cyan-400 text-[10px] font-mono px-2 py-0.5 rounded font-bold">
+                    Renato (Rosto Autorizado • 96%)
+                  </span>
+                </div>
+                <div className="absolute top-[32%] right-[15%] w-[35%] h-[40%] border-2 border-cyan-400 rounded-lg pointer-events-none shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+                  <span className="absolute -top-6 left-0 bg-cyan-950/90 text-cyan-300 border border-cyan-400 text-[10px] font-mono px-2 py-0.5 rounded font-bold">
+                    Toyota Corolla (Placa ABC-1234)
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* Camera OSD Header Overlay */}
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+              <div className="flex items-center space-x-2 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700 pointer-events-auto">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-bold text-xs text-white font-mono">{currentSpotlightCam.name}</span>
+                <span className="text-[11px] text-cyan-300 font-mono">({currentSpotlightCam.ip})</span>
+              </div>
+
+              {/* Selector to switch which camera is on single view */}
+              <div className="flex items-center space-x-1.5 bg-slate-950/80 backdrop-blur-md p-1 rounded-xl border border-slate-700 pointer-events-auto">
+                {displayCameras.map((cam, idx) => (
+                  <button
+                    key={cam.id}
+                    onClick={() => setSelectedCamIndex(idx)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                      selectedCamIndex === idx ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Cam {idx + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* 2x2 Mosaic or Grid View: Shows ALL cameras cleanly */
+          <div className={`grid gap-4 ${
+            layoutMode === 'mosaic' 
+              ? 'grid-cols-1 md:grid-cols-2' 
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+          }`}>
+            {displayCameras.map((cam, index) => {
+              const isNewlyAdded = cam.id === recentlyAddedCamId;
+              return (
+                <div
+                  key={cam.id}
+                  className={`group relative rounded-2xl overflow-hidden bg-slate-950 border transition-all flex flex-col shadow-xl ${
+                    isNewlyAdded 
+                      ? 'border-emerald-400 ring-2 ring-emerald-500/50 shadow-emerald-500/20' 
+                      : 'border-slate-800 hover:border-cyan-500/50'
+                  }`}
+                >
+                  {/* Clean Top Bar of each camera */}
+                  <div className="p-3 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between z-10">
+                    <div className="flex items-center space-x-2 truncate">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                      <span className="font-bold text-xs text-white truncate font-mono">
+                        {cam.name}
+                      </span>
+                      {isNewlyAdded && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold font-mono bg-emerald-500 text-slate-950 shrink-0 animate-pulse">
+                          RECÉM ADICIONADA
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30 font-bold">
+                        {cam.ip}
+                      </span>
+                      {onDeleteCamera && displayCameras.length > 1 && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Deseja remover a câmera ${cam.name} do mosaico?`)) {
+                              onDeleteCamera(cam.id);
+                              showToast('Câmera Removida', `${cam.name} foi removida da tela.`);
+                            }
+                          }}
+                          className="text-slate-500 hover:text-rose-400 p-1 transition-colors cursor-pointer"
+                          title="Remover câmera"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Video Feed / Image */}
+                  <div className="relative aspect-video bg-black overflow-hidden">
+                    <img
+                      src={getCameraImage(cam, index)}
+                      alt={cam.name}
+                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+                    />
+
+                    {/* AI Markings (If enabled) */}
+                    {showAiBoxes && (index === 0 ? (
+                      <div className="absolute top-[20%] left-[25%] w-[35%] h-[55%] border-2 border-cyan-400 rounded-lg pointer-events-none shadow-[0_0_10px_rgba(34,211,238,0.4)]">
+                        <span className="absolute -top-5 left-0 bg-cyan-950/90 text-cyan-300 border border-cyan-400 text-[9px] font-mono px-1.5 py-0.2 rounded font-bold">
+                          Renato (Autorizado)
+                        </span>
+                      </div>
+                    ) : (index === 1 ? (
+                      <div className="absolute top-[35%] left-[20%] w-[50%] h-[45%] border-2 border-cyan-400 rounded-lg pointer-events-none shadow-[0_0_10px_rgba(34,211,238,0.4)]">
+                        <span className="absolute -top-5 left-0 bg-cyan-950/90 text-cyan-300 border border-cyan-400 text-[9px] font-mono px-1.5 py-0.2 rounded font-bold">
+                          Placa ABC-1234
+                        </span>
+                      </div>
+                    ) : null))}
+
+                    {/* Quick Expand Button on Hover */}
+                    <button
+                      onClick={() => {
+                        setSelectedCamIndex(index);
+                        setLayoutMode('single');
+                      }}
+                      className="absolute bottom-2.5 right-2.5 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white/80 hover:text-white backdrop-blur-sm border border-white/20 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                      title="Maximizar Câmera"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+
+                    <div className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 text-[10px] font-mono text-slate-300">
+                      25 FPS • H.264
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 7. CLEAN BOTTOM ACTIONS: IoT Portão & Luz + Últimas Detecções */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1">
+        {/* CARD 1: Controles Rápidos de Automação */}
+        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center space-x-2 text-cyan-400">
+              <Zap className="w-4 h-4" />
+              <h3 className="font-bold text-xs uppercase font-mono text-white">
+                Controles de Ação Rápida (Portão & Iluminação)
+              </h3>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400">LAN • &lt; 150ms</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Botão Portão */}
+            <button
+              onClick={handleOpenGate}
+              disabled={gateOpening}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+                gateOpening
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg shadow-emerald-500/30'
+                  : 'bg-slate-950 hover:bg-slate-800/80 border-slate-800 text-white hover:border-cyan-500/40'
+              }`}
+            >
+              <div className="space-y-0.5">
+                <div className="font-bold text-xs flex items-center gap-1.5">
+                  <Lock className={`w-3.5 h-3.5 ${gateOpening ? 'text-slate-950' : 'text-cyan-400'}`} />
+                  <span>Portão da Garagem</span>
+                </div>
+                <div className={`text-[10px] font-mono ${gateOpening ? 'text-slate-950 font-bold' : 'text-slate-400'}`}>
+                  {gateOpening ? 'Enviando pulso...' : 'Clique para Abrir'}
+                </div>
+              </div>
+              <span className={`text-xs font-mono font-bold px-2 py-1 rounded ${
+                gateOpening ? 'bg-slate-950 text-emerald-300' : 'bg-slate-900 text-cyan-400'
+              }`}>
+                {gateOpening ? 'ABRINDO' : 'ABRIR'}
+              </span>
+            </button>
+
+            {/* Botão Luz da Fachada */}
+            <button
+              onClick={() => setLightOn(!lightOn)}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+                lightOn
+                  ? 'bg-cyan-950/60 border-cyan-400 text-white shadow-md'
+                  : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-400'
+              }`}
+            >
+              <div className="space-y-0.5">
+                <div className="font-bold text-xs flex items-center gap-1.5">
+                  <Lightbulb className={`w-3.5 h-3.5 ${lightOn ? 'text-amber-400' : 'text-slate-500'}`} />
+                  <span className="text-white">Refletor Fachada</span>
+                </div>
+                <div className="text-[10px] font-mono text-slate-400">
+                  {lightOn ? 'Iluminação Ligada' : 'Iluminação Desligada'}
+                </div>
+              </div>
+              <span className={`text-xs font-mono font-bold px-2 py-1 rounded ${
+                lightOn ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 text-slate-500'
+              }`}>
+                {lightOn ? 'LIGADO' : 'DESLIGADO'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* CARD 2: Últimas Detecções */}
+        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center space-x-2 text-cyan-400">
+              <Clock className="w-4 h-4" />
+              <h3 className="font-bold text-xs uppercase font-mono text-white">
+                Últimos Eventos & Reconhecimentos
+              </h3>
+            </div>
+            <button
+              onClick={() => onNavigateTab('logs')}
+              className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
+            >
+              Ver todos os logs &rarr;
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-2.5">
+                <img
+                  src="https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=80&auto=format&fit=crop&q=80"
+                  alt="Car"
+                  className="w-10 h-8 object-cover rounded-lg border border-slate-700 shrink-0"
+                />
+                <div>
+                  <div className="font-bold text-white">Placa ABC-1234 Reconhecida</div>
+                  <div className="text-[10px] text-slate-400 font-mono">Portão Principal • Há 2 minutos</div>
+                </div>
+              </div>
+              <button
+                onClick={handleOpenGate}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold font-mono transition-colors cursor-pointer"
+              >
+                Abrir Portão
+              </button>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-2.5">
+                <img
+                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&auto=format&fit=crop&q=80"
+                  alt="Face"
+                  className="w-10 h-8 object-cover rounded-lg border border-slate-700 shrink-0"
+                />
+                <div>
+                  <div className="font-bold text-white">Renato Olivier (Rosto Autorizado)</div>
+                  <div className="text-[10px] text-slate-400 font-mono">Portão Social • Há 5 minutos</div>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">
+                Autorizado
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

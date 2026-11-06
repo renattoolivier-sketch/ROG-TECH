@@ -147,7 +147,8 @@ export default function App() {
   // Device & Biometric Handlers
   const handleAddBatchCameras = (newCams: CameraDevice[]) => {
     if (newCams.length === 0) return;
-    setCameras(prev => [...prev, ...newCams]);
+    // Prepend newly added cameras to the top so the user immediately sees them in the mosaic!
+    setCameras(prev => [...newCams, ...prev]);
     setSelectedCameraId(newCams[0].id);
 
     const timestampStr = new Date().toTimeString().split(' ')[0];
@@ -174,6 +175,10 @@ export default function App() {
 
   const handleAddCamera = (cam: CameraDevice) => {
     handleAddBatchCameras([cam]);
+  };
+
+  const handleDeleteCamera = (camId: string) => {
+    setCameras(prev => prev.filter(c => c.id !== camId));
   };
 
   const handleUpdateAiFps = (camId: string, fps: number) => {
@@ -342,6 +347,8 @@ export default function App() {
               onTriggerAction={handleExecuteManualAction}
               onOpenAddCameraModal={() => setIsAddCameraModalOpen(true)}
               onNavigateTab={setActiveTab}
+              onAddCamera={handleAddCamera}
+              onDeleteCamera={handleDeleteCamera}
             />
           )}
 
