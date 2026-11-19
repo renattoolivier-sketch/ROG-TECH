@@ -6,6 +6,7 @@ import {
   Layers, HardDrive, Wifi, Sparkles, AlertCircle, Radio, Search,
   Terminal, Copy, ExternalLink, RefreshCw, CheckCircle2, ShieldCheck, Activity
 } from 'lucide-react';
+import { apiUrl } from '../utils/networkBridge';
 
 interface AddCameraOrNvrModalProps {
   isOpen: boolean;
@@ -96,7 +97,7 @@ export const AddCameraOrNvrModal: React.FC<AddCameraOrNvrModalProps> = ({
     setTestResult(null);
 
     try {
-      const response = await fetch('/api/cameras/test-connection', {
+      const response = await fetch(apiUrl('/api/cameras/test-connection'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host: camIp.trim(), port: camPort, timeoutMs: 3000 })
@@ -135,7 +136,7 @@ export const AddCameraOrNvrModal: React.FC<AddCameraOrNvrModalProps> = ({
       gpuSlot: 'TensorRT Instance #0',
       isRealFeed: true,
       feedType: 'rtsp_stream',
-      liveVideoUrl: `/api/cameras/stream?url=${encodeURIComponent(customRtspMain.trim() || urls.main)}`,
+      liveVideoUrl: apiUrl(`/api/cameras/stream?url=${encodeURIComponent(customRtspMain.trim() || urls.main)}`),
       zones: [
         {
           id: `zone_auto_${Date.now()}`,
@@ -188,7 +189,7 @@ export const AddCameraOrNvrModal: React.FC<AddCameraOrNvrModalProps> = ({
         gpuSlot: `TensorRT Instance #${ch % 2}`,
         isRealFeed: true,
         feedType: 'rtsp_stream',
-        liveVideoUrl: `/api/cameras/stream?url=${encodeURIComponent(urls.main)}`,
+        liveVideoUrl: apiUrl(`/api/cameras/stream?url=${encodeURIComponent(urls.main)}`),
         zones: []
       });
     }

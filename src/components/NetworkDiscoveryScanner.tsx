@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CameraDevice, CameraFeedId } from '../types';
+import { apiUrl, detectClientLanIpViaWebRTC } from '../utils/networkBridge';
 import { 
   Search, Radio, Wifi, Server, Video, Check, Plus, 
   RefreshCw, ShieldCheck, Zap, Activity, HardDrive, CheckCircle2, AlertTriangle, Layers
@@ -41,6 +42,14 @@ export const NetworkDiscoveryScanner: React.FC<NetworkDiscoveryScannerProps> = (
   const [currentScanningIp, setCurrentScanningIp] = useState('');
   const [discoveredList, setDiscoveredList] = useState<DiscoveredNetworkDevice[]>([]);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
+  const [detectedPhoneIp, setDetectedPhoneIp] = useState<string | null>(null);
+
+  useEffect(() => {
+    detectClientLanIpViaWebRTC().then(({ lanIp, subnet }) => {
+      if (lanIp) setDetectedPhoneIp(lanIp);
+      if (subnet) setTargetSubnet(subnet);
+    });
+  }, []);
 
   // Execute Network Scan
   const handleStartScan = async () => {
@@ -60,7 +69,7 @@ export const NetworkDiscoveryScanner: React.FC<NetworkDiscoveryScannerProps> = (
     }
 
     try {
-      const response = await fetch('/api/scan-network', {
+      const response = await fetch(apiUrl('/api/scan-network'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subnet: targetSubnet, scanType: scanProtocol })
@@ -263,6 +272,11 @@ export const NetworkDiscoveryScanner: React.FC<NetworkDiscoveryScannerProps> = (
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
             Localiza câmeras IP, gravadores NVR/DVR legados (via ONVIF WS-Discovery) e relés IoT na sua rede local.
+            {detectedPhoneIp && (
+              <span className="ml-1.5 text-emerald-400 font-mono font-bold">
+                • IP do Aparelho: {detectedPhoneIp}
+              </span>
+            )}
           </p>
         </div>
 

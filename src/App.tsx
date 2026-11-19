@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SidebarNavigation } from './components/SidebarNavigation';
 import { CommandCenterView } from './components/CommandCenterView';
 import { LiveSimulator } from './components/LiveSimulator';
@@ -12,6 +12,22 @@ import { SystemLogsView } from './components/SystemLogsView';
 import { ClientMultiTenantManager } from './components/ClientMultiTenantManager';
 import { LocalNetworkDeployGuide } from './components/LocalNetworkDeployGuide';
 import { NvrPlaybackView } from './components/NvrPlaybackView';
+import { ServerRemoteAccessView } from './components/ServerRemoteAccessView';
+import { 
+  testFirestoreConnection, 
+  syncCameraToFirestore, 
+  deleteCameraFromFirestore, 
+  subscribeToCameras, 
+  syncFaceToFirestore, 
+  deleteFaceFromFirestore,
+  subscribeToFaces,
+  syncPlateToFirestore, 
+  deletePlateFromFirestore,
+  subscribeToPlates,
+  subscribeToServerBridge,
+  logEventToFirestore 
+} from './firebase';
+import { getConfiguredServerUrl, setConfiguredServerUrl } from './utils/networkBridge';
 import { 
   INITIAL_CAMERAS, 
   INITIAL_AUTOMATION_RULES, 
@@ -26,12 +42,13 @@ import {
   MqttLogMessage, 
   RegisteredFace, 
   RegisteredPlate, 
-  SystemEventAlert 
+  SystemEventAlert,
+  ZoneVirtual
 } from './types';
 import { 
   Bell, X, ShieldAlert, CheckCircle2, Zap, 
-  LayoutDashboard, Video, Map, Radio, Sliders, BookOpen, UserCheck, Clock,
-  Building, Download, User, ShieldCheck, Lock
+  LayoutDashboard, Video, Map as MapIcon, Radio, Sliders, BookOpen, UserCheck, Clock,
+  Building, Download, User, ShieldCheck, Lock, Flame
 } from 'lucide-react';
 
 export default function App() {
@@ -46,6 +63,86 @@ export default function App() {
   const [alerts, setAlerts] = useState<SystemEventAlert[]>([]);
   const [latestPopup, setLatestPopup] = useState<SystemEventAlert | null>(null);
   const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
+  const [isFirebaseOnline, setIsFirebaseOnline] = useState<boolean>(false);
+
+  // Initialize and verify Firebase Firestore connection + hydrate cameras, faces, plates & server bridge
+  useEffect(() => {
+    testFirestoreConnection().then(online => {
+      setIsFirebaseOnline(online);
+    });
+
+    const unsubCams = subscribeToCameras((firestoreCams) => {
+      if (firestoreCams && firestoreCams.length > 0) {
+        setCameras(prev => {
+          const map = new Map<string, CameraDevice>();
+          prev.forEach(c => map.set(c.id, c));
+          firestoreCams.forEach(fc => {
+            map.set(fc.id, {
+              ...fc,
+              zones: fc.zones || []
+            } as CameraDevice);
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubFaces = subscribeToFaces((firestoreFaces) => {
+      if (firestoreFaces && firestoreFaces.length > 0) {
+        setFaces(prev => {
+          const map = new Map<string, RegisteredFace>();
+          prev.forEach(f => map.set(f.id, f));
+          firestoreFaces.forEach((ff: any) => {
+            map.set(ff.id, {
+              id: ff.id,
+              name: ff.name || 'Morador',
+              role: ff.role || 'Morador',
+              avatarUrl: ff.avatarUrl || ff.faceImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+              embeddingVectorLength: ff.embeddingVectorLength || 512,
+              registeredAt: ff.registeredAt || new Date().toISOString().split('T')[0],
+              status: ff.status || 'active',
+              notes: ff.notes || ''
+            });
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubPlates = subscribeToPlates((firestorePlates) => {
+      if (firestorePlates && firestorePlates.length > 0) {
+        setPlates(prev => {
+          const map = new Map<string, RegisteredPlate>();
+          prev.forEach(p => map.set(p.id, p));
+          firestorePlates.forEach((fp: any) => {
+            map.set(fp.id, {
+              id: fp.id,
+              plate: fp.plate || '',
+              format: fp.format || 'mercosul',
+              ownerName: fp.ownerName || fp.owner || 'Proprietário',
+              vehicleModel: fp.vehicleModel || 'Veículo',
+              accessLevel: fp.accessLevel || (fp.authorized === false ? 'deny' : 'allow'),
+              lastSeen: fp.lastSeen || 'Sincronizado'
+            });
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubBridge = subscribeToServerBridge((cfg) => {
+      if (cfg?.serverUrl && !getConfiguredServerUrl()) {
+        setConfiguredServerUrl(cfg.serverUrl);
+      }
+    });
+
+    return () => {
+      unsubCams();
+      unsubFaces();
+      unsubPlates();
+      unsubBridge();
+    };
+  }, []);
 
   // Simulated Multi-Tenant Access Context (Super Admin vs Client Tenant)
   const [simulatedUser, setSimulatedUser] = useState<{
@@ -74,6 +171,7 @@ export default function App() {
 
     setAlerts(prev => [newAlert, ...prev.slice(0, 49)]);
     setLatestPopup(newAlert);
+    logEventToFirestore(newAlert);
 
     setTimeout(() => {
       setLatestPopup(curr => curr?.id === newAlert.id ? null : curr);
@@ -145,12 +243,17 @@ export default function App() {
     setRules(prev => [newRule, ...prev]);
   };
 
-  // Device & Biometric Handlers
+  // Device & Biometric Handlers with Firestore Persistence
   const handleAddBatchCameras = (newCams: CameraDevice[]) => {
     if (newCams.length === 0) return;
     // Prepend newly added cameras to the top so the user immediately sees them in the mosaic!
     setCameras(prev => [...newCams, ...prev]);
     setSelectedCameraId(newCams[0].id);
+
+    // Save each camera to Firebase Firestore
+    newCams.forEach(cam => {
+      syncCameraToFirestore(cam);
+    });
 
     const timestampStr = new Date().toTimeString().split(' ')[0];
     const isNvr = newCams.length > 1;
@@ -162,13 +265,14 @@ export default function App() {
       severity: 'info',
       title: isNvr ? `NVR Adicionado (${newCams.length} Canais)` : `Câmera Adicionada: ${newCams[0].name}`,
       description: isNvr 
-        ? `${newCams.length} fluxos RTSP gerados e integrados com sucesso ao pipeline de inferência.`
-        : `Fluxo RTSP ${newCams[0].ip} pronto para processamento analítico.`,
+        ? `${newCams.length} fluxos RTSP sincronizados e gravados no Firebase Firestore.`
+        : `Câmera ${newCams[0].ip} salva no Firebase e ativa no mosaico.`,
       metadata: { count: newCams.length },
       ack: false
     };
     setAlerts(prev => [confirmAlert, ...prev]);
     setLatestPopup(confirmAlert);
+    logEventToFirestore(confirmAlert);
     setTimeout(() => {
       setLatestPopup(curr => curr?.id === confirmAlert.id ? null : curr);
     }, 4500);
@@ -180,6 +284,7 @@ export default function App() {
 
   const handleDeleteCamera = (camId: string) => {
     setCameras(prev => prev.filter(c => c.id !== camId));
+    deleteCameraFromFirestore(camId);
   };
 
   const handleUpdateAiFps = (camId: string, fps: number) => {
@@ -188,18 +293,35 @@ export default function App() {
 
   const handleAddFace = (face: RegisteredFace) => {
     setFaces(prev => [face, ...prev]);
+    syncFaceToFirestore(face);
   };
 
   const handleDeleteFace = (id: string) => {
     setFaces(prev => prev.filter(f => f.id !== id));
+    deleteFaceFromFirestore(id);
   };
 
   const handleAddPlate = (plate: RegisteredPlate) => {
     setPlates(prev => [plate, ...prev]);
+    syncPlateToFirestore(plate);
   };
 
   const handleDeletePlate = (id: string) => {
     setPlates(prev => prev.filter(p => p.id !== id));
+    deletePlateFromFirestore(id);
+  };
+
+  const handleSaveCameraZones = (cameraId: CameraFeedId, zones: ZoneVirtual[]) => {
+    setCameras(prev =>
+      prev.map(cam => {
+        if (cam.id === cameraId) {
+          const updated = { ...cam, zones };
+          syncCameraToFirestore(updated);
+          return updated;
+        }
+        return cam;
+      })
+    );
   };
 
   const visibleCameras = cameras.filter(cam => {
@@ -278,6 +400,15 @@ export default function App() {
                 Voltar para Master Admin
               </button>
             )}
+
+            <div className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono border ${
+              isFirebaseOnline
+                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                : 'bg-amber-950/80 border-amber-500/50 text-amber-300'
+            }`}>
+              <Flame className={`w-3.5 h-3.5 ${isFirebaseOnline ? 'text-amber-400 fill-amber-400' : 'text-slate-400'}`} />
+              <span className="font-bold">{isFirebaseOnline ? 'Firebase Firestore: Ativo' : 'Firebase: Conectando...'}</span>
+            </div>
 
             <button
               onClick={() => setActiveTab('clients')}
@@ -361,6 +492,9 @@ export default function App() {
               onTriggerEvent={handleTriggerEvent}
               rules={rules}
               onOpenAddCameraModal={() => setIsAddCameraModalOpen(true)}
+              registeredFaces={faces}
+              registeredPlates={plates}
+              onSaveCameraZones={handleSaveCameraZones}
             />
           )}
 
@@ -438,6 +572,10 @@ export default function App() {
             <LocalNetworkDeployGuide />
           )}
 
+          {activeTab === 'server_remote' && (
+            <ServerRemoteAccessView />
+          )}
+
           {activeTab === 'architecture' && (
             <ArchitectureDocs />
           )}
@@ -479,7 +617,7 @@ export default function App() {
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Map className="w-4 h-4" />
+            <MapIcon className="w-4 h-4" />
             <span className="text-[10px] tracking-tight">Mapas</span>
             {activeTab === 'maps' && <span className="w-5 h-0.5 bg-cyan-400 rounded-full"></span>}
           </button>

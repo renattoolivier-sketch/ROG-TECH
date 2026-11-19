@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Collection: /test/{docId} (used for connection testing)
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Collection: /cameras/{cameraId}
+    match /cameras/{cameraId} {
+      allow read: if true;
+      allow write: if isValidId(cameraId) 
+        && incoming().name is string && incoming().name.size() <= 100
+        && incoming().ip is string && incoming().ip.size() <= 45;
+      allow delete: if isValidId(cameraId);
+    }
+
+    // Collection: /clients/{clientId}
+    match /clients/{clientId} {
+      allow read: if true;
+      allow write: if isValidId(clientId)
+        && incoming().name is string && incoming().name.size() <= 120
+        && incoming().email is string && incoming().email.size() <= 120;
+      allow delete: if isValidId(clientId);
+    }
+
+    // Collection: /faces/{faceId}
+    match /faces/{faceId} {
+      allow read: if true;
+      allow write: if isValidId(faceId)
+        && incoming().name is string && incoming().name.size() <= 100;
+      allow delete: if isValidId(faceId);
+    }
+
+    // Collection: /plates/{plateId}
+    match /plates/{plateId} {
+      allow read: if true;
+      allow write: if isValidId(plateId)
+        && incoming().plate is string && incoming().plate.size() <= 10
+        && incoming().owner is string && incoming().owner.size() <= 100;
+      allow delete: if isValidId(plateId);
+    }
+
+    // Collection: /events/{eventId}
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isValidId(eventId)
+        && incoming().title is string && incoming().title.size() <= 120;
+    }
+
+    // Collection: /system_config/{configId}
+    match /system_config/{configId} {
+      allow read: if true;
+      allow write: if isValidId(configId)
+        && incoming().serverUrl is string && incoming().serverUrl.size() <= 300;
+    }
+  }
+}

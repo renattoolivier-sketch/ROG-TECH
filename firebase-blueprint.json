@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "Camera": {
+      "title": "Camera",
+      "description": "Câmera IP ou canal de NVR cadastrado no sistema ROG-TECH",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 100 },
+        "ip": { "type": "string", "maxLength": 45 },
+        "onvifPort": { "type": "number" },
+        "rtspMainStream": { "type": "string", "maxLength": 500 },
+        "rtspSubStream": { "type": "string", "maxLength": 500 },
+        "codec": { "type": "string", "enum": ["H.264", "H.265"] },
+        "brand": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["online", "offline", "unstable"] },
+        "tenantId": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "ip"]
+    },
+    "ClientTenant": {
+      "title": "ClientTenant",
+      "description": "Dados cadastrais do cliente/empresa monitorada (Multi-Tenant)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "plan": { "type": "string", "enum": ["basic", "pro", "enterprise"] },
+        "status": { "type": "string", "enum": ["active", "suspended", "trial"] },
+        "camerasCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "email"]
+    },
+    "RegisteredFace": {
+      "title": "RegisteredFace",
+      "description": "Face cadastrada para reconhecimento facial biométrico por IA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "maxLength": 50 },
+        "department": { "type": "string", "maxLength": 50 },
+        "faceImageUrl": { "type": "string", "maxLength": 500 },
+        "confidenceThreshold": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "RegisteredPlate": {
+      "title": "RegisteredPlate",
+      "description": "Placa veicular Mercosul cadastrada para controle de portão ALPR",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "plate": { "type": "string", "maxLength": 10 },
+        "owner": { "type": "string", "maxLength": 100 },
+        "vehicleModel": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string", "maxLength": 50 },
+        "authorized": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["plate", "owner"]
+    },
+    "SecurityEvent": {
+      "title": "SecurityEvent",
+      "description": "Registro de evento ou alerta de segurança gerado por IA/CFTV",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "cameraId": { "type": "string", "maxLength": 100 },
+        "cameraName": { "type": "string", "maxLength": 100 },
+        "severity": { "type": "string", "enum": ["critical", "warning", "info"] },
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "severity"]
+    },
+    "ServerBridgeConfig": {
+      "title": "ServerBridgeConfig",
+      "description": "Configuração de IP e porta do servidor local para sincronização com APK/Celular",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "serverUrl": { "type": "string", "maxLength": 300 },
+        "localIp": { "type": "string", "maxLength": 45 },
+        "port": { "type": "number" },
+        "tunnelUrl": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["serverUrl"]
+    }
+  },
+  "firestore": {
+    "/cameras/{cameraId}": {
+      "schema": "Camera",
+      "description": "Coleção de câmeras e gravadores NVR cadastrados"
+    },
+    "/clients/{clientId}": {
+      "schema": "ClientTenant",
+      "description": "Clientes e condomínios cadastrados no sistema multi-tenant"
+    },
+    "/faces/{faceId}": {
+      "schema": "RegisteredFace",
+      "description": "Base biométrica de faces autorizadas para IA"
+    },
+    "/plates/{plateId}": {
+      "schema": "RegisteredPlate",
+      "description": "Base veicular ALPR para liberação de portão"
+    },
+    "/events/{eventId}": {
+      "schema": "SecurityEvent",
+      "description": "Histórico de eventos de detecção e alertas de segurança"
+    },
+    "/system_config/{configId}": {
+      "schema": "ServerBridgeConfig",
+      "description": "Configurações de servidor local e ponte IP/porta para aplicativo móvel APK"
+    }
+  }
+}

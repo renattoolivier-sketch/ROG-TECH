@@ -11,9 +11,32 @@ const __dirname = path.dirname(__filename);
 import dgram from 'dgram';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// CORS Middleware so Android APK WebView (http://localhost / capacitor://localhost) can talk to PC LAN Server
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+// Serve ONNX Runtime Web WASM binaries locally for offline/LAN YOLOv8n inference
+app.use(
+  '/onnx-wasm',
+  express.static(path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist'), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.wasm')) {
+        res.setHeader('Content-Type', 'application/wasm');
+      }
+    }
+  })
+);
 
 // Helper: Get local network interfaces
 function getLocalSubnets() {
@@ -36,6 +59,7 @@ function getLocalSubnets() {
 app.get('/api/system/network-info', (req: Request, res: Response) => {
   const interfaces = os.networkInterfaces();
   const physicalInterfaces: any[] = [];
+  let detectedLocalIp = '';
   
   for (const name of Object.keys(interfaces)) {
     for (const netInfo of interfaces[name] || []) {
@@ -47,20 +71,61 @@ app.get('/api/system/network-info', (req: Request, res: Response) => {
           internal: netInfo.internal,
           mac: netInfo.mac
         });
+        if (!netInfo.internal && !detectedLocalIp && (netInfo.address.startsWith('192.168.') || netInfo.address.startsWith('10.') || netInfo.address.startsWith('172.'))) {
+          detectedLocalIp = netInfo.address;
+        }
       }
     }
   }
 
   const rawClientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
   const isCloudHost = !!(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB || process.env.APP_URL?.includes('run.app'));
+  const subnets = getLocalSubnets();
+  const primarySubnet = detectedLocalIp ? `${detectedLocalIp.substring(0, detectedLocalIp.lastIndexOf('.'))}.0/24` : subnets[0];
 
   res.json({
     success: true,
     serverHostname: os.hostname(),
     isCloudHost,
     detectedClientIp: rawClientIp,
-    availableSubnets: getLocalSubnets(),
+    primaryHostIp: detectedLocalIp || (isCloudHost ? rawClientIp : '127.0.0.1'),
+    primarySubnet,
+    availableSubnets: subnets,
     interfaces: physicalInterfaces
+  });
+});
+
+// Server Status & Remote Access Information Endpoint
+app.get('/api/system/server-status', (req: Request, res: Response) => {
+  const interfaces = os.networkInterfaces();
+  let localIp = '127.0.0.1';
+  for (const name of Object.keys(interfaces)) {
+    for (const netInfo of interfaces[name] || []) {
+      if (netInfo.family === 'IPv4' && !netInfo.internal) {
+        localIp = netInfo.address;
+        break;
+      }
+    }
+  }
+
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+  const mem = process.memoryUsage();
+
+  res.json({
+    success: true,
+    status: 'online',
+    port: PORT,
+    platform: process.platform,
+    hostname: os.hostname(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    memoryRssMb: Math.round(mem.rss / 1024 / 1024),
+    localIp,
+    clientIp,
+    urls: {
+      localhost: `http://localhost:${PORT}`,
+      lan: `http://${localIp}:${PORT}`,
+      wanExample: `http://${clientIp}:${PORT}`
+    }
   });
 });
 
@@ -273,6 +338,32 @@ app.get('/api/cameras/stream', (req: Request, res: Response) => {
       res.status(502).send('Falha ao conectar com o stream RTSP');
     }
   });
+});
+
+// Real Edge AI Events Ingestion (from Python YOLOv8n Worker or Remote Cameras)
+const recentAiEvents: any[] = [];
+
+app.post('/api/ai/events', (req: Request, res: Response) => {
+  const payload = req.body || {};
+  const evt = {
+    id: payload.id || `ai_evt_${Date.now()}`,
+    timestamp: new Date().toTimeString().split(' ')[0],
+    cameraId: payload.cameraId || 'cam_portao',
+    cameraName: payload.cameraName || 'Câmera RTSP',
+    severity: payload.severity || 'warning',
+    title: payload.title || 'Detecção YOLOv8 Nano',
+    description: payload.description || 'Evento recebido do worker YOLOv8n.',
+    metadata: payload.metadata || {},
+    ack: false,
+    receivedAt: new Date().toISOString()
+  };
+  recentAiEvents.unshift(evt);
+  if (recentAiEvents.length > 50) recentAiEvents.pop();
+  res.json({ success: true, event: evt });
+});
+
+app.get('/api/ai/events', (_req: Request, res: Response) => {
+  res.json({ success: true, events: recentAiEvents });
 });
 
 // Start server with Vite middleware in dev or static files in prod

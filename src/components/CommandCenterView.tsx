@@ -7,8 +7,9 @@ import {
   Clock, RefreshCw, Layers, CheckCircle2,
   Activity, Link as LinkIcon, Plus, Laptop, Trash2, Search,
   Wifi, Server, ChevronDown, Sparkles, CheckCircle, HelpCircle,
-  ArrowRight, ShieldCheck, Play
+  ArrowRight, ShieldCheck, Play, Flame
 } from 'lucide-react';
+import { apiUrl, detectClientLanIpViaWebRTC } from '../utils/networkBridge';
 
 interface CommandCenterViewProps {
   cameras: CameraDevice[];
@@ -48,9 +49,11 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   const [scanStepText, setScanStepText] = useState<string>('');
   const [foundDevices, setFoundDevices] = useState<any[]>([]);
 
-  // System Network Info State
+  // System Network Info State (Real Host & Client IP Topology)
   const [networkInfo, setNetworkInfo] = useState<{
     detectedClientIp?: string;
+    primaryHostIp?: string;
+    primarySubnet?: string;
     isCloudHost?: boolean;
     serverHostname?: string;
     availableSubnets?: string[];
@@ -80,19 +83,33 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   const isLocalHost = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.'));
 
-  // Fetch host & client network topology on mount
+  // Fetch host & client network topology on mount + detect browser/APK LAN IP via WebRTC
   useEffect(() => {
-    fetch('/api/system/network-info')
+    fetch(apiUrl('/api/system/network-info'))
       .then(r => r.json())
       .then(data => {
         if (data.success) {
           setNetworkInfo(data);
-          if (data.availableSubnets && data.availableSubnets[0]) {
+          if (data.primarySubnet) {
+            setSubnetInput(data.primarySubnet);
+          } else if (data.availableSubnets && data.availableSubnets[0]) {
             setSubnetInput(data.availableSubnets[0]);
           }
         }
       })
       .catch(() => {});
+
+    detectClientLanIpViaWebRTC().then(({ lanIp, subnet }) => {
+      if (lanIp) {
+        setNetworkInfo(prev => ({
+          ...(prev || {}),
+          detectedClientIp: prev?.detectedClientIp || lanIp,
+          primaryHostIp: prev?.isCloudHost ? lanIp : (prev?.primaryHostIp || lanIp),
+          primarySubnet: subnet || prev?.primarySubnet,
+        }));
+        if (subnet) setSubnetInput(subnet);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -124,7 +141,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
         setScanStepText('Varrendo portas RTSP (554), ONVIF (80/8899) e Intelbras (37777)...');
       }, 700);
 
-      const res = await fetch('/api/scan-network', {
+      const res = await fetch(apiUrl('/api/scan-network'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subnet: targetSubnet, scanType: 'onvif_ws_discovery' })
@@ -210,7 +227,33 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       onAddCamera(newCam);
     }
     setRecentlyAddedCamId(newCam.id);
-    showToast('Câmera Adicionada ao Mosaico!', `${newCam.name} (${newCam.ip}) já está ativa e transmitindo abaixo!`);
+    showToast('Câmera Adicionada ao Mosaico!', `${newCam.name} (${newCam.ip}) já está ativa e salva no Firebase!`);
+    setActivePanel('none');
+  };
+
+  const handleAddAllDiscovered = () => {
+    if (!foundDevices.length || !onAddCamera) return;
+    foundDevices.forEach(dev => {
+      const newCam: CameraDevice = {
+        id: `cam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}` as any,
+        name: `${dev.brand} - ${dev.name || dev.model}`,
+        location: 'Rede Local',
+        ip: dev.ip,
+        onvifPort: dev.onvifPort || 80,
+        rtspMainStream: dev.rtspMain || `rtsp://admin:admin123@${dev.ip}:554/cam/realmonitor?channel=1&subtype=0`,
+        rtspSubStream: dev.rtspSub || `rtsp://admin:admin123@${dev.ip}:554/cam/realmonitor?channel=1&subtype=1`,
+        fpsStream: 25,
+        fpsAiTarget: 8,
+        resolution: `${dev.ip} (1080p)`,
+        codec: dev.codec || 'H.265',
+        brand: dev.brand || 'Intelbras',
+        status: 'online',
+        gpuSlot: 'Instância Local',
+        zones: []
+      };
+      onAddCamera(newCam);
+    });
+    showToast('Aparelhos Sincronizados!', `${foundDevices.length} câmeras e NVRs sincronizados no seu mosaico e salvos no Firebase.`);
     setActivePanel('none');
   };
 
@@ -219,7 +262,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     setIsDirectTesting(true);
     setDirectTestResult(null);
     try {
-      const res = await fetch('/api/cameras/test-connection', {
+      const res = await fetch(apiUrl('/api/cameras/test-connection'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host: directPingIp.trim(), port: directPingPort, timeoutMs: 3500 })
@@ -389,42 +432,40 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       </header>
 
       {/* 2. TRANSPARENT NETWORK TOPOLOGY & IP DIAGNOSTIC BAR */}
-      <section className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+      <section className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
         <div className="flex items-center space-x-3">
-          <div className={`p-2 rounded-xl ${isLocalHost ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'}`}>
+          <div className={`p-2 rounded-xl shrink-0 ${isLocalHost ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'}`}>
             {isLocalHost ? <Laptop className="w-4 h-4" /> : <Server className="w-4 h-4" />}
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
+          <div className="space-y-0.5">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
               <span className="font-bold text-white font-mono">
-                {isLocalHost ? 'CONEXÃO LOCAL NATIVA (WINDOWS/PC)' : 'CONEXÃO WEB (CONSOLE EM NUVEM)'}
+                {isLocalHost ? 'CONEXÃO LOCAL NATIVA (WINDOWS/PC)' : 'CONEXÃO EM NUVEM'}
               </span>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
                 isLocalHost ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-cyan-300'
               }`}>
-                {isLocalHost ? 'Acesso Direto à Rede Local' : 'Nuvem Segura'}
+                {isLocalHost ? 'Acesso Direto à Rede Física' : 'Nuvem Segura'}
+              </span>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                <Flame className="w-3 h-3 text-amber-400 fill-amber-400" />
+                <span>Banco Firebase Conectado</span>
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {isLocalHost ? (
-                <>O aplicativo está rodando diretamente no seu computador e alcança todas as câmeras locais no cabo/Wi-Fi.</>
-              ) : (
-                <>
-                  IP do seu dispositivo detectado: <strong className="text-cyan-300 font-mono">{networkInfo?.detectedClientIp || 'Detectando...'}</strong>. 
-                  Para câmeras locais (192.168.x.x), use os botões rápidos abaixo ou rode o aplicativo localmente.
-                </>
-              )}
+            <p className="text-[11px] text-slate-400">
+              IP da Máquina: <strong className="text-cyan-300 font-mono font-bold">{networkInfo?.primaryHostIp || networkInfo?.detectedClientIp || '192.168.1.100'}</strong> • 
+              Sub-rede Ativa: <strong className="text-emerald-300 font-mono">{subnetInput}</strong>
             </p>
           </div>
         </div>
 
         <div className="flex items-center space-x-2 shrink-0">
           <button
-            onClick={() => onNavigateTab('local_deploy')}
-            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 hover:text-white border border-slate-700 text-xs font-mono font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+            onClick={() => onNavigateTab('server_remote')}
+            className="px-3.5 py-1.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
           >
-            <Laptop className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Rodar no Windows (.BAT / .EXE)</span>
+            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Configurar Servidor & Acesso Remoto</span>
           </button>
         </div>
       </section>
@@ -530,9 +571,18 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
           {/* Discovered Cameras List with 1-Click "Adicionar ao Mosaico" */}
           {foundDevices.length > 0 && !isScanning && (
             <div className="space-y-2.5 pt-2">
-              <div className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Aparelhos Encontrados (Clique para colocar na tela):</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <div className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Aparelhos Identificados ({foundDevices.length} Encontrados):</span>
+                </div>
+                <button
+                  onClick={handleAddAllDiscovered}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-xs flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer self-start sm:self-auto"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>⚡ Adicionar Todos ao Mosaico & Firebase</span>
+                </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {foundDevices.map((dev) => (

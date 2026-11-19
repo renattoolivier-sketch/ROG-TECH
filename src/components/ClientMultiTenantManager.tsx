@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { CameraDevice, AutomationRule } from '../types';
+import { syncClientToFirestore, subscribeToClients } from '../firebase';
 import { 
   Users, Shield, Key, Lock, Eye, Plus, Trash2, 
   CheckCircle2, AlertTriangle, Building, UserCheck, 
-  Server, Database, Copy, Check, ExternalLink, RefreshCw, X
+  Server, Database, Copy, Check, ExternalLink, RefreshCw, X, Flame
 } from 'lucide-react';
 
 export interface ClientTenant {
@@ -133,6 +134,36 @@ export const ClientMultiTenantManager: React.FC<ClientMultiTenantManagerProps> =
   const [selectedCamIds, setSelectedCamIds] = useState<string[]>([]);
   const [copiedSchema, setCopiedSchema] = useState(false);
 
+  // Sync to Firestore and listen in real-time
+  useEffect(() => {
+    const unsub = subscribeToClients((remoteClients) => {
+      if (remoteClients && remoteClients.length > 0) {
+        setTenants(prev => {
+          const map = new Map<string, ClientTenant>();
+          prev.forEach(t => map.set(t.id, t));
+          remoteClients.forEach((rc: any) => {
+            map.set(rc.id, {
+              id: rc.id,
+              name: rc.name,
+              document: rc.document || 'Não informado',
+              plan: rc.plan === 'enterprise' ? 'Enterprise' : (rc.plan === 'basic' ? 'Básico' : 'Profissional'),
+              status: rc.status === 'suspended' ? 'suspended' : 'active',
+              assignedCameraIds: rc.assignedCameraIds || [],
+              assignedActuatorIds: ['sonoff_relay'],
+              maxCameras: rc.camerasCount || 16,
+              contactEmail: rc.email || 'contato@cliente.com',
+              contactPhone: rc.phone || '(11) 99999-9999',
+              createdAt: rc.createdAt || new Date().toLocaleDateString('pt-BR')
+            });
+          });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => unsub();
+  }, []);
+
   // Sync to localStorage
   useEffect(() => {
     localStorage.setItem('rog_tech_tenants', JSON.stringify(tenants));
@@ -174,6 +205,10 @@ export const ClientMultiTenantManager: React.FC<ClientMultiTenantManagerProps> =
 
     setTenants(prev => [newTenant, ...prev]);
     setUsers(prev => [...prev, newTenantAdmin]);
+    
+    // Save to Firebase Firestore
+    syncClientToFirestore(newTenant);
+
     setIsAddTenantModalOpen(false);
     setNewClientName('');
     setNewClientDoc('');

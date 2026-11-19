@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, Video, Map, Sliders, Zap, 
   FileText, Plus, Radio, Server, Shield, Sparkles, BookOpen, UserCheck, Clock,
-  Building, Download, HardDrive
+  Building, Download, HardDrive, Globe
 } from 'lucide-react';
 
 interface SidebarNavigationProps {
@@ -85,6 +85,13 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       label: 'Baixar App & GitHub',
       sub: 'PC Local & Celular',
       icon: Download
+    },
+    {
+      id: 'server_remote',
+      label: 'Servidor & Acesso Remoto',
+      sub: 'IP, Porta & Acesso Externo',
+      icon: Globe,
+      badge: '24/7'
     },
     {
       id: 'architecture',

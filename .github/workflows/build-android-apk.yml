@@ -1,0 +1,101 @@
+name: Build Android APK (ROG-TECH Mobile)
+
+on:
+  push:
+    branches: [ main, master, principal ]
+    tags:
+      - 'v*'
+  release:
+    types: [ published, created ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 3. Configurar Java JDK 17 (Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 4. Instalar Dependências Web
+        run: |
+          npm install --no-audit --prefer-offline
+
+      - name: 5. Compilar Frontend Vite + Assets YOLOv8
+        run: |
+          npm run build
+
+      - name: 6. Instalar Capacitor Android SDK
+        run: |
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          if [ ! -d "android" ]; then npx cap add android; fi
+          npx cap sync android
+
+      - name: 7. Configurar Permissões de Rede Local, Wi-Fi, Câmera e Cleartext no AndroidManifest
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          node -e '
+            const fs = require("fs");
+            let xml = fs.readFileSync(process.env.MANIFEST, "utf8");
+            const perms = [
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
+              "android.permission.ACCESS_WIFI_STATE",
+              "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+              "android.permission.CAMERA",
+              "android.permission.RECORD_AUDIO"
+            ];
+            for (const p of perms) {
+              if (!xml.includes(p)) {
+                xml = xml.replace("<application", `<uses-permission android:name="${p}" />\n    <application`);
+              }
+            }
+            if (!xml.includes("android:usesCleartextTraffic")) {
+              xml = xml.replace("<application", `<application android:usesCleartextTraffic="true"`);
+            }
+            fs.writeFileSync(process.env.MANIFEST, xml, "utf8");
+          '
+        env:
+          MANIFEST: android/app/src/main/AndroidManifest.xml
+
+      - name: 8. Compilar APK Android (ROG-TECH-Mobile.apk)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../ROG-TECH-Mobile.apk
+
+      - name: 9. Publicar APK para Download nos Artefatos
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ROG-TECH-Android-APK
+          path: ROG-TECH-Mobile.apk
+          retention-days: 30
+
+      - name: 10. Anexar APK na Release do GitHub
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.ref == 'refs/heads/principal'
+        continue-on-error: true
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "principal" ] || [ "$TAG" = "main" ]; then
+            TAG="v2.4.0"
+          fi
+          gh release upload "$TAG" ROG-TECH-Mobile.apk --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

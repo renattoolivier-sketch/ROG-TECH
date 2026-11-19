@@ -7,7 +7,7 @@ import {
 
 export const LocalNetworkDeployGuide: React.FC = () => {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
-  const [activeDeployTab, setActiveDeployTab] = useState<'exe' | 'auto_bat' | 'github_releases' | 'pwa'>('exe');
+  const [activeDeployTab, setActiveDeployTab] = useState<'exe' | 'apk' | 'auto_bat' | 'github_releases' | 'pwa'>('apk');
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -105,6 +105,20 @@ services:
       - NODE_ENV=production
     command: sh -c "npm install && npm run build && npm start"`;
 
+  const androidApkScript = `# 1. Compilar o aplicativo Web + Motor YOLOv8 Nano
+npm run build
+
+# 2. Sincronizar projeto Android com Capacitor (já configurado em capacitor.config.ts)
+npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+npx cap add android
+npx cap sync android
+
+# 3. Abrir no Android Studio ou compilar o APK direto pelo terminal:
+cd android
+./gradlew assembleDebug
+# O arquivo gerado estará em: android/app/build/outputs/apk/debug/app-debug.apk
+# OU use o workflow automático já criado no GitHub: .github/workflows/build-android-apk.yml`;
+
   const downloadFile = (filename: string, content: string) => {
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -167,7 +181,25 @@ services:
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2">
+          <button
+            onClick={() => setActiveDeployTab('apk')}
+            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              activeDeployTab === 'apk'
+                ? 'bg-emerald-950/80 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
+                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold font-mono text-emerald-300">ANDROID APK</span>
+              <Smartphone className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="font-bold text-xs text-white">APK Celular (Capacitor)</div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Gera o <code className="text-emerald-300">ROG-TECH-Mobile.apk</code> com acesso HTTP LAN, IP da rede e câmera para YOLOv8n.
+            </p>
+          </button>
+
           <button
             onClick={() => setActiveDeployTab('exe')}
             className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
@@ -177,7 +209,7 @@ services:
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold font-mono text-cyan-300">OPÇÃO 1 (Recomendada)</span>
+              <span className="text-xs font-bold font-mono text-cyan-300">WINDOWS .EXE</span>
               <Box className="w-4 h-4 text-cyan-400" />
             </div>
             <div className="font-bold text-xs text-white">App Instalável .EXE</div>
@@ -195,12 +227,12 @@ services:
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold font-mono text-emerald-300">OPÇÃO 2</span>
+              <span className="text-xs font-bold font-mono text-emerald-300">SERVIDOR PC</span>
               <Play className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="font-bold text-xs text-white">.BAT com Auto-Instalação</div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Script que instala o Node.js silenciosamente no Windows via winget e inicia sozinho.
+              Script que instala o Node.js silenciosamente no Windows via winget e inicia o servidor local.
             </p>
           </button>
 
@@ -213,16 +245,74 @@ services:
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold font-mono text-amber-300">OPÇÃO 3 (Em 5 Segundos)</span>
+              <span className="text-xs font-bold font-mono text-amber-300">INSTANTÂNEO</span>
               <Monitor className="w-4 h-4 text-amber-400" />
             </div>
-            <div className="font-bold text-xs text-white">Instalar App no Windows (PWA)</div>
+            <div className="font-bold text-xs text-white">Instalar App (PWA)</div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Instala direto pelo Chrome/Edge. Cria ícone na Área de Trabalho e abre como programa nativo.
+              Instala direto pelo Chrome/Edge no PC ou celular em 5 segundos como aplicativo nativo.
             </p>
           </button>
         </div>
       </div>
+
+      {/* ANDROID APK TAB */}
+      {activeDeployTab === 'apk' && (
+        <div className="cyber-panel p-5 rounded-2xl border border-emerald-500/30 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-2 text-emerald-400">
+              <Smartphone className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-sm font-bold font-mono text-white">
+                Como Instalar o APK Android (ROG-TECH-Mobile.apk) Integrado ao Sistema
+              </h2>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+              CAPACITOR + PERMISSÕES LAN + YOLOv8n
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed">
+            O projeto já está configurado com <strong>capacitor.config.ts</strong> (com <code className="text-emerald-300">cleartext: true</code> para comunicar em HTTP na rede local 192.168.x.x) e o workflow automático <code className="text-cyan-300">.github/workflows/build-android-apk.yml</code> que compila o <strong>ROG-TECH-Mobile.apk</strong> na nuvem do GitHub sem precisar instalar Android Studio no seu PC!
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+              <div className="text-emerald-400 font-bold">1. IP da Rede no Celular</div>
+              <p className="text-[11px] text-slate-400 font-sans">
+                O APK detecta seu IP Wi-Fi local (WebRTC + Capacitor) e usa a ponte em &quot;Servidor &amp; Acesso Remoto&quot; para achar seu PC servidor.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+              <div className="text-cyan-400 font-bold">2. Câmera + YOLOv8 Nano</div>
+              <p className="text-[11px] text-slate-400 font-sans">
+                Com permissão nativa de câmera, seu celular vira uma câmera inteligente com YOLOv8n, leitura de placas e linhas virtuais.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+              <div className="text-amber-400 font-bold">3. Download Direto no GitHub</div>
+              <p className="text-[11px] text-slate-400 font-sans">
+                Ao subir no GitHub, vá em <strong>Actions &rarr; Build Android APK</strong> e baixe o artefato <code>ROG-TECH-Mobile.apk</code>.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+              <span>Se preferir compilar o APK localmente no seu computador:</span>
+              <button
+                onClick={() => copyToClipboard(androidApkScript, 'apk_script')}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs flex items-center gap-1 border border-slate-700 cursor-pointer"
+              >
+                {copiedSection === 'apk_script' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>Copiar Comandos APK</span>
+              </button>
+            </div>
+            <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-emerald-300 text-[11px] overflow-x-auto leading-relaxed font-mono">
+              {androidApkScript}
+            </pre>
+          </div>
+        </div>
+      )}
 
       {/* ACTIVE TAB CONTENT */}
       {activeDeployTab === 'exe' && (
