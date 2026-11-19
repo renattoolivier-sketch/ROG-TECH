@@ -34,7 +34,7 @@ jobs:
 
       - name: 4. Instalar Dependências Web
         run: |
-          npm install --no-audit --prefer-offline
+          npm install --force --no-audit --prefer-offline
 
       - name: 5. Compilar Frontend Vite + Assets YOLOv8
         run: |
@@ -42,7 +42,7 @@ jobs:
 
       - name: 6. Instalar Capacitor Android SDK
         run: |
-          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android --force
           if [ ! -d "android" ]; then npx cap add android; fi
           npx cap sync android
 

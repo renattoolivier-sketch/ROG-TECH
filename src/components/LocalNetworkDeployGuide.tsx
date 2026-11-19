@@ -75,14 +75,14 @@ npx electron-builder --win --x64 -c.win.target=nsis -c.extraMetadata.main=electr
 # ./dist/ROG-TECH-Command-Center-Setup-v2.4.0.exe
 # (Este .EXE já embute o Node.js e Chromium: o cliente não precisa instalar nada!)`;
 
-  const gitCloneScript = `# 1. Clonar o repositório da ROG-TECH
-git clone https://github.com/rog-tech/cctv-intelligence.git
-cd cctv-intelligence
+  const gitCloneScript = `# 1. Clonar o repositório oficial da ROG-TECH
+git clone https://github.com/renattoolivier-sketch/ROG-TECH.git
+cd ROG-TECH
 
 # 2. Instalar as dependências do projeto
-npm install
+npm install --force
 
-# 3. Iniciar o servidor local na sua rede
+# 3. Iniciar o servidor local na sua rede (ou dê 2 cliques em servidor_windows_completo.bat)
 npm run dev
 
 # Pronto! Acesse no navegador: http://localhost:3000
@@ -378,12 +378,12 @@ cd android
             </div>
 
             <a
-              href="https://github.com"
+              href="https://github.com/renattoolivier-sketch/ROG-TECH/actions"
               target="_blank"
               rel="noreferrer"
               className="px-3.5 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-mono text-xs flex items-center gap-1.5 shrink-0"
             >
-              <span>Ver GitHub Releases</span>
+              <span>Ver Actions / Releases</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>

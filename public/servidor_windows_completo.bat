@@ -1,23 +1,33 @@
 @echo off
 setlocal enabledelayedexpansion
-title ROG-TECH Servidor CFTV & Acesso Remoto
+title ROG-TECH Servidor CFTV e Acesso Remoto
 color 0b
 
-:: 1. Auto-Elevacao para Administrador (UAC)
+:: 1. Auto-Elevacao para Administrador (UAC) suportando pastas com espacos
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] Solicitando permissoes de Administrador para configurar Firewall e Servidor...
-    powershell -Command "Start-Process cmd -ArgumentList '/c call \"%~f0\"' -Verb RunAs"
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 
 cd /d "%~dp0"
 cls
 echo ================================================================
-echo           ROG-TECH - INSTALADOR & SERVIDOR DEDICADO
+echo           ROG-TECH - INSTALADOR E SERVIDOR DEDICADO
 echo         Central de Monitoramento, CFTV, IA e Acesso Remoto
 echo ================================================================
 echo.
+
+:: Verificar se esta na pasta correta do projeto
+if not exist "package.json" (
+    echo [ERRO] Arquivo package.json nao encontrado nesta pasta!
+    echo Certifique-se de extrair o ZIP completo do projeto e executar
+    echo este arquivo DENTRO da pasta principal do ROG-TECH.
+    echo.
+    pause
+    exit /b 1
+)
 
 :: 2. Escolha de Porta
 set PORT=3000
@@ -36,6 +46,7 @@ echo.
 
 :: 4. Verificar Node.js
 echo [2/4] Verificando instalacao do Node.js...
+if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
 node -v >nul 2>&1
 if %errorlevel% neq 0 (
     echo [AVISO] Node.js nao encontrado. Baixando e instalando Node.js LTS automaticamente...
@@ -43,9 +54,10 @@ if %errorlevel% neq 0 (
     if %errorlevel% equ 0 (
         winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
     ) else (
-        powershell -Command "Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.12.2/node-v20.12.2-x64.msi' -OutFile '%TEMP%\nodejs_installer.msi'"
+        powershell -Command "Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi' -OutFile '%TEMP%\nodejs_installer.msi'"
         powershell -Command "Start-Process msiexec.exe -ArgumentList '/i %TEMP%\nodejs_installer.msi /qn' -Wait"
     )
+    if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
     echo [OK] Node.js instalado!
 ) else (
     echo [OK] Node.js detectado:
@@ -54,9 +66,9 @@ if %errorlevel% neq 0 (
 echo.
 
 :: 5. Instalar dependencias se necessario
-if not exist "node_modules\" (
+if not exist "node_modules\onnxruntime-web\" (
     echo [3/4] Instalando dependencias do sistema...
-    call npm install
+    call npm install --force
 )
 
 :: 6. Detectar IP Local da Maquina
@@ -87,7 +99,7 @@ echo   [COMPUTADOR LOCAL]:       http://localhost:!PORT!
 echo   [REDE LOCAL / WI-FI]:     http://!LOCAL_IP!:!PORT!
 echo.
 echo   [ACESSO DE QUALQUER CANTO DA RUA / 4G / INTERNET]:
-echo   - Abra o painel na aba 'Servidor & Acesso Remoto' para ver
+echo   - Abra o painel na aba 'Servidor e Acesso Remoto' para ver
 echo     as opcoes de Tunel Seguro Cloudflare ou DDNS de forma gratuita.
 echo.
 echo ================================================================

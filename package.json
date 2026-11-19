@@ -2,7 +2,7 @@
   "name": "rog-tech-command-center",
   "description": "ROG-TECH Command Center - Central de Inteligencia CFTV, Visao Computacional & IoT",
   "author": "Renato Olivier <renattoolivier@gmail.com>",
-  "homepage": "https://github.com/renattoolivier/ROG-TECH",
+  "homepage": "https://github.com/renattoolivier-sketch/ROG-TECH",
   "private": true,
   "version": "2.4.0",
   "main": "electron/main.cjs",
